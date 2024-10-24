@@ -2,10 +2,29 @@ from colorama import Fore, init # Import the Fore and init functions from colora
 import sqlite3 # Import the sqlite3 module
 import bcrypt # Import the bcrypt module
 from config import chapters # Import the chapters dictionary from config.py
-from questions import generate_lesson_content, generate_questions_from_content, generate_review_questions, generate_cumulative_review # Import functions from questions.py
+from questions import validate_answer_with_gpt, generate_python_question, generate_lesson_content, generate_questions_from_content, generate_review_questions, generate_cumulative_review # Import functions from questions.py
 import logging # Import the logging module
+from fuzzywuzzy import fuzz # Import the fuzz function from fuzzywuzzy
+import subprocess # Import the subprocess module
+import sys # Import the sys module
 
-
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+# Helper function to run the user's code
+def run_user_code(code):
+    """Execute the user's code safely and capture the output."""
+    try:
+        # Use subprocess to run the code and capture both stdout and stderr
+        result = subprocess.run(
+            [sys.executable, "-c", code],  # Run code with the current Python interpreter
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return "", "Execution timed out."
 # Initialize colorama to reset color after each print
 init(autoreset=True) # Initialize colorama
 
@@ -136,53 +155,111 @@ def play_lesson(progress): # Define the play_lesson function
     progress.save_progress() # Save the progress
 
 # Function to ask questions and validate answers
-def ask_question_and_validate(question_data): # Define the ask_question_and_validate function
+def ask_question_and_validate(question_data):
     """Display the question, get user input, and validate the answer."""
-    if not question_data or 'question' not in question_data: # Check if question data is missing or invalid
-        logging.error(f"Invalid question data: {question_data}") # Log the error
-        raise ValueError("Error: Question data is missing or invalid.") # Raise a ValueError
+    if not question_data or 'question' not in question_data:
+        logging.error(f"Invalid question data: {question_data}")
+        raise ValueError("Error: Question data is missing or invalid.")
 
-    print(Fore.CYAN + f"\n{question_data['question']}") # Print the question
+    # Display the question
+    print(Fore.CYAN + f"\n{question_data['question']}")
 
-    if question_data['type'] == "multiple_choice": # Check if the question type is multiple choice
-        display_options(question_data['options']) # Display the multiple-choice options
-        user_answer = input("Enter the letter of your answer (A, B, C, D, or E): ").strip().upper() # Get the user's answer
-        correct = user_answer == question_data['correct_answer'] # Check if the user's answer is correct
-        logging.info(f"User answered: {user_answer} | Correct: {correct}") # Log the user's answer
-        return correct # Return the result
+    # Display the options with labels and texts
+    if question_data['type'] == "multiple_choice" and 'options' in question_data:
+        # Log and print each option as it is processed
+        for label, option_text in question_data['options'].items():
+            print(f"{label}: {option_text}")
 
+        # Get user input and validate it
+        user_answer = input("Enter the letter of your answer (A, B, C, D): ").strip().upper()
+
+        # Validate input
+        if user_answer not in question_data['options']:
+            logging.warning(f"Invalid input received: {user_answer}")
+            print(Fore.RED + "Invalid input. Please enter a valid option letter (A, B, C, D).")
+            return False
+
+        # Check if the answer is correct
+        correct = user_answer == question_data['correct_answer']
+        if correct:
+            print(Fore.GREEN + "Correct!")
+        else:
+            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}) {question_data['options'][question_data['correct_answer']]}")
+        return correct
+        
     elif question_data['type'] == "true_false": # Check if the question type is true or false
         user_answer = input("True or False? ").strip().lower() # Get the user's answer
+        logging.debug(f"User Answer: {user_answer} | Expected Answer: {question_data['correct_answer']}")
         correct = user_answer == question_data['correct_answer'].lower() # Check if the user's answer is correct
-        logging.info(f"User answered: {user_answer} | Correct: {correct}") # Log the user's answer
-        return correct # Return the result
+        if correct:
+            print(Fore.GREEN + "Correct!")
+        else:
+            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}")
+        return correct
 
     elif question_data['type'] == "fill_in_the_blank": # Check if the question type is fill in the blank
         user_answer = input("Fill in the blank: ").strip().lower() # Get the user's answer
+        logging.debug(f"User Answer: {user_answer} | Expected Answer: {question_data['correct_answer']}")
         correct = user_answer == question_data.get('correct_answer', '').lower() # Check if the user's answer is correct
-        logging.info(f"User answered: {user_answer} | Correct: {correct}") # Log the user's answer
-        return correct # Return the result
+        if correct:
+            print(Fore.GREEN + "Correct!")
+        else:
+            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}")
+        return correct
 
-    elif question_data['type'] == "write_code": # Check if the question type is write code
-        print("Write your code solution below. Press Enter to submit.") # Print the instruction
-        input()  # Capture the user’s input (code solution)
-        print(f"Sample Solution:\n{question_data.get('sample_solution', 'N/A')}") # Display the sample solution
-        return True # Return True for now
+    elif question_data['type'] == "write_code":
+        print(Fore.CYAN + "\nWrite your code solution below. Use multiple lines if needed. Type 'END' on a new line when finished:")
 
-    elif question_data['type'] == "scenario": # Check if the question type is scenario-based
-        input("Describe your response to the scenario: ")  # Capture input
-        logging.info("User completed scenario-based question.") # Log the completion
-        return True # Return True for now
+        # Collect multi-line user code input
+        user_code = ""
+        while True:
+            line = input()
+            if line.strip().upper() == "END":
+                break
+            user_code += line + "\n"
 
-    logging.warning(f"Unhandled question type: {question_data['type']}") # Log unhandled question types
-    return False # Return False for unhandled question types
+        logging.debug(f"User's Code:\n{user_code}")
 
-# Function to display multiple-choice options
-def display_options(options): # Define the display_options function
-    """Display multiple-choice options.""" 
-    option_letters = ['A', 'B', 'C', 'D', 'E'] # Define the option letters
-    for idx, option in enumerate(options): # Iterate over the options
-        print(f"{option_letters[idx]}: {option}") # Print the option
+        # Run the user's code and capture output or errors
+        user_output, user_errors = run_user_code(user_code)
+
+        if user_errors:
+            print(f"\nYour code produced the following error:\n{user_errors}")
+            logging.error(f"User's Code Error: {user_errors}")
+        else:
+            print(f"\nYour code produced the following output:\n{user_output}")
+            logging.info(f"User's Code Output: {user_output}")
+
+        # Validate the user's solution using GPT
+        is_correct, feedback = validate_answer_with_gpt(
+            question_data, user_code=user_code, user_output=user_output
+        )
+
+        # Display the result based on GPT validation
+        if is_correct:
+            print(Fore.GREEN + "Correct! Well done.")
+        else:
+            print(Fore.RED + "Incorrect. Review the feedback below:")
+            print(Fore.YELLOW + feedback)
+
+        return is_correct
+
+    elif question_data['type'] == "scenario":
+        user_answer = input("Describe your response to the scenario: ").strip()
+
+        # Secondary GPT Call to Validate the Answer
+        is_correct = validate_answer_with_gpt(
+            question_data['question'], 
+            question_data['answer'], 
+            user_answer
+        )
+
+        if is_correct:
+            print(Fore.GREEN + "Correct!")
+        else:
+            print(Fore.RED + f"Incorrect. The correct answer was: {question_data.get('answer', 'N/A')}")
+
+        return is_correct
 
 # Function to generate review questions
 def review_test(progress): # Define the review_test function
@@ -264,25 +341,53 @@ def play_game(): # Define the play_game function
 
     print(Fore.GREEN + "Thank you for playing! Your progress is saved.") # Print a closing message
 
+def enter_testing_mode():
+    """Enter a testing mode to validate question types without lesson generation."""
+    print("Testing Mode: Choose the type of question to generate:")
+    print("1: Multiple Choice")
+    print("2: True/False")
+    print("3: Fill in the Blank")
+    print("4: Write Code")
+    print("5: Scenario")
+
+    choice = input("Enter your choice (1-5): ")
+
+    # Generate the question based on user input.
+    question_data = generate_python_question(choice)
+
+    if question_data:
+        # Use `ask_question_and_validate()` directly.
+        is_correct = ask_question_and_validate(question_data)
+    else:
+        print("Failed to generate a valid question.")
 #Function to welcome users  
 def welcome():
-    while True: # Loop until valid choice is made
-        choice = input("Do you have an account? (Y/N): ").strip().upper() # Get user choice
-        print(f"User chose: {choice}")  # Debugging print
+    while True:
+        print("\n--- Welcome ---")
+        print("1) Log In")
+        print("2) Register")
+        print("3) Testing Mode")
 
-        if choice == 'Y': # Check if user has an account
-            user = login_user() # Log in the user
-            if user: # Check if user is valid
-                progress = UserProgress(user[0])  # Instantiate UserProgress object
-                progress.chapter = user[4]  # Restore saved chapter
-                progress.lesson = user[5]   # Restore saved lesson
-                return progress  # Return progress object
-        elif choice == 'N': # Check if user does not have an account
-            register_user() # Register a new user
-            print(Fore.GREEN + "\nRegistration complete! Please log in.") # Print a success message
-        else: # Handle invalid choices
-            print(Fore.RED + "Invalid choice. Please enter 'Y' or 'N'.") # Print an error message
+        choice = input("Select an option (1/2/3): ").strip()
+
+        if choice == '1':
+            user = login_user()
+            if user:
+                progress = UserProgress(user[0])  # Restore user progress
+                progress.chapter = user[4]        # Load saved chapter
+                progress.lesson = user[5]         # Load saved lesson
+                return progress  # Return progress to continue the game loop
+
+        elif choice == '2':
+            register_user()
+            print(Fore.GREEN + "\nRegistration complete! Please log in.")
+
+        elif choice == '3':
+            enter_testing_mode()  # Launch testing mode
+        else:
+            print(Fore.RED + "Invalid choice. Please select 1, 2, or 3.")
+
 
 # Main entry point
-if __name__ == "__main__": # Check if the script is being run directly
-    play_game()  # Start the main game loop
+if __name__ == "__main__":
+    welcome()  # Start with the welcome screen

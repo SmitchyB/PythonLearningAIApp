@@ -7,9 +7,11 @@ from config import chapters # Import the chapters dictionary from the config mod
 from openai import OpenAI  # Import the OpenAI class from the openai module
 import logging # Import the logging module for logging messages
 from fuzzywuzzy import fuzz # Import the fuzz function from the fuzzywuzzy module for string similarity
-from difflib import SequenceMatcher # Import the SequenceMatcher class from the difflib module for string similarity
 import re # Import the re module for regular expressions
-
+# Configure logging to display only your function logs
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("requests").setLevel(logging.WARNING)
+format = Fore.CYAN + "%(asctime)s %(levelname)s: %(message)s" + Fore.RESET
 # Load the environment variables
 load_dotenv()
 
@@ -100,7 +102,7 @@ def generate_questions_from_content(chapter, lesson, content, question_count): #
                 messages=[{"role": "system", "content": "You are a Python tutor."}, # Define the system message
                           {"role": "user", "content": prompt}],
                 temperature=0.7, # Set the temperature to 0.7 for diversity
-                max_tokens=300 # Limit the token count for the question
+                max_tokens=400 # Limit the token count for the question
             )
 
             question_data = parse_response(response.choices[0].message.content.strip(), question_type) # Parse the generated question
@@ -120,241 +122,470 @@ def generate_questions_from_content(chapter, lesson, content, question_count): #
     return questions # Return the list of generated questions
 
 # Define the determine_question_types function
-def determine_question_types(title): # Define the determine_question_types function with the title parameter
+def determine_question_types(title):
     """Determine allowed question types based on the lesson title."""
-    if any(keyword in title for keyword in ["introduction", "overview", "getting started", "what is", "Setting Up", "First", "Installing"]): # Check if the title contains any introduction-related keywords
-        return ["multiple_choice", "true_false", "fill_in_the_blank"] # Return the allowed question types for introduction lessons
-    else: # For other lessons
-        return ["multiple_choice", "true_false", "fill_in_the_blank", "scenario", "write_code"] # Return the allowed question types for other lessons
+    if any(keyword in title for keyword in ["introduction", "overview", "getting started", 
+                                            "what is", "setting up", "first", "installing"]):
+        # No code challenges allowed for introductory lessons
+        return ["multiple_choice", "true_false", "fill_in_the_blank", "scenario"]
+    elif any(keyword in title for keyword in ["review", "test"]):
+        # Review lessons can have all types except write_code
+        return ["multiple_choice", "true_false", "fill_in_the_blank", "scenario"]
+    else:
+        # For other advanced lessons, all question types are allowed
+        return ["multiple_choice", "true_false", "fill_in_the_blank", "scenario", "write_code"]
+
+def map_choice_to_type(choice):
+    logging.debug(f"map_choice_to_type received choice: {choice}")
+    return {
+        '1': 'multiple_choice',
+        '2': 'true_false',
+        '3': 'fill_in_the_blank',
+        '4': 'write_code',
+        '5': 'scenario'
+    }.get(choice, 'multiple_choice')
+
+# In questions.py
+def generate_python_question(choice, max_retries=2):
+    """Generate a Python-related question for testing purposes with retry support."""
+    try:
+        logging.debug("Starting generate_python_question function.")
+
+        question_type = map_choice_to_type(choice)
+        logging.debug(f"Mapped question type: {question_type}")
+
+        prompt = build_prompt(None, None, question_type)
+        if not prompt:
+            logging.error("Prompt generation failed or returned empty.")
+            return None
+
+        logging.debug(f"Generated prompt: {prompt}")
+
+        # Check if the API client is initialized properly.
+        if not hasattr(client, 'chat'):
+            logging.error("API client is not properly initialized.")
+            return None
+
+        # Helper function to call the API with retries
+        def send_request_with_retries(retries_left):
+            try:
+                logging.debug(f"Sending request to OpenAI API. Retries left: {retries_left}")
+
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a Python tutor."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.7,
+                    max_tokens=500
+                )
+
+                logging.debug(f"Received API response: {response}")
+
+                if not response or not response.choices:
+                    logging.warning("API response is empty or improperly formatted.")
+                    raise ValueError("Invalid API response.")
+
+                return response.choices[0].message.content.strip()
+
+            except Exception as e:
+                logging.error(f"API request failed: {e}")
+                if retries_left > 0:
+                    return send_request_with_retries(retries_left - 1)
+                else:
+                    logging.error("Exceeded maximum retries for API request.")
+                    return None
+
+        # Call the helper function with retries
+        question_text = send_request_with_retries(max_retries)
+        if not question_text:
+            logging.error("Failed to generate a valid question after retries.")
+            return None
+
+        logging.debug(f"Extracted question text: {question_text}")
+
+        question_data = parse_response(question_text, question_type)
+        if not question_data:
+            logging.warning("Invalid question format. Retrying...")
+
+            # If retries are exhausted, return None.
+            if max_retries > 0:
+                return generate_python_question(choice, max_retries - 1)
+            else:
+                logging.error("Max retries exhausted. Unable to generate a valid question.")
+                return None
+
+        logging.debug(f"Parsed question data: {question_data}")
+
+        if "question" in question_data:
+            logging.debug("Successfully generated question.")
+            return question_data
+        else:
+            logging.error("Parsed question data is missing the 'question' key.")
+            return None
+
+    except Exception as e:
+        logging.error(f"Error generating Python question: {e}")
+        return None
+
+
 
 # Define the build_prompt function
-def build_prompt(chapter, lesson, question_type): # Define the build_prompt function with the chapter, lesson, and question_type parameters
-    chapter_title = chapters[chapter]['title'] # Retrieve the chapter title
-    lesson_title = chapters[chapter]['lessons'][lesson]['title'] # Retrieve the lesson title
+def build_prompt(chapter, lesson, question_type):
+    """Generate a prompt based on the given question type, chapter, and lesson."""
+    
+    # Retrieve the chapter and lesson titles with fallback values.
+    chapter_title = chapters.get(chapter, {}).get('title', "General Python Knowledge")
+    lesson_title = chapters.get(chapter, {}).get('lessons', {}).get(lesson, {}).get('title', "Fundamental Concepts")
 
-    if question_type == "multiple_choice": # Check if the question type is multiple choice
-        return ( # Return the specific prompt for multiple-choice questions
-            f"Create a multiple-choice question for:\n" # Prompt to create a multiple-choice question
-            f"Chapter: {chapter_title}\n" # Include the chapter title in the prompt
-            f"Lesson: {lesson_title}\n" # Include the lesson title in the prompt
-            f"Provide four answer options labeled A, B, C, D and indicate the correct one." # Include additional requirements for the question
-        )
-    elif question_type == "true_false": # Check if the question type is true/false
-        return ( # Return the specific prompt for true/false questions
-            f"Create a true/false question related to:\n" # Prompt to create a true/false question
-            f"Chapter: {chapter_title}\n" # Include the chapter title in the prompt
-            f"Lesson: {lesson_title}\n" # Include the lesson title in the prompt
-            f"Clearly state the correct answer (True or False)." # Include additional requirements for the question
-        )
-    elif question_type == "fill_in_the_blank": # Check if the question type is fill-in-the-blank
-        return ( # Return the specific prompt for fill-in-the-blank questions
-            f"Create a fill-in-the-blank question for:\n" # Prompt to create a fill-in-the-blank question
-            f"Chapter: {chapter_title}\n" # Include the chapter title in the prompt
-            f"Lesson: {lesson_title}\n" # Include the lesson title in the prompt
-            f"The question must contain '________'. Provide the correct answer in parentheses." # Include additional requirements for the question
-        )
-    elif question_type == "scenario": # Check if the question type is scenario-based
-        return ( # Return the specific prompt for scenario-based questions
-            f"Create a scenario-based question for:\n" # Prompt to create a scenario-based question
-            f"Chapter: {chapter_title}\n" # Include the chapter title in the prompt
-            f"Lesson: {lesson_title}\n" # Include the lesson title in the prompt
-            f"The scenario should present a problem, requiring the student to apply concepts from the lesson." # Include additional requirements for the question
-        )
-    elif question_type == "write_code": # Check if the question type is a code challenge
-        return ( # Return the specific prompt for code challenges
-            f"Create a coding challenge for:\n" # Prompt to create a coding challenge
-            f"Chapter: {chapter_title}\n" # Include the chapter title in the prompt
-            f"Lesson: {lesson_title}\n" # Include the lesson title in the prompt
-            f"Provide a sample solution." # Include additional requirements for the question
+    logging.debug(f"Building prompt with chapter: {chapter_title}, lesson: {lesson_title}, question type: {question_type}")
+
+    if question_type == "multiple_choice":
+        prompt = (
+            f"### MULTIPLE CHOICE QUESTION\n"
+            f"Chapter: {chapter_title}\n"
+            f"Lesson: {lesson_title}\n\n"
+            f"Question:\n"
+            f"[Insert question text here]\n\n"
+            f"Options:\n"
+            f"A) [Option A]\n"
+            f"B) [Option B]\n"
+            f"C) [Option C]\n"
+            f"D) [Option D]\n\n"
+            f"Correct Answer: [Correct Option Letter]"
         )
 
+    elif question_type == "true_false":
+        prompt = (
+            f"### TRUE/FALSE QUESTION\n"
+            f"Chapter: {chapter_title}\n"
+            f"Lesson: {lesson_title}\n\n"
+            f"Question:\n"
+            f"[Insert question text here]\n\n"
+            f"Correct Answer: [True/False]"
+        )
+
+    elif question_type == "fill_in_the_blank":
+        prompt = (
+            f"### FILL IN THE BLANK QUESTION\n"
+            f"Chapter: {chapter_title}\n"
+            f"Lesson: {lesson_title}\n\n"
+            f"Question:\n"
+            f"[Insert question text with '________']\n\n"
+            f"Correct Answer: [Insert correct answer]"
+        )
+
+    elif question_type == "scenario":
+        prompt = (
+            f"### SCENARIO QUESTION\n"
+            f"Chapter: {chapter_title}\n"
+            f"Lesson: {lesson_title}\n\n"
+            f"Scenario:\n"
+            f"[Describe the scenario. Ensure the correct answer is explained in a complete sentence.]\n\n"
+            f"Correct Answer:\n"
+            f"[Provide a descriptive, multi-word answer.]"
+        )
+
+    elif question_type == "write_code":
+        prompt = (
+            f"### CODE CHALLENGE\n"
+            f"Chapter: {chapter_title}\n"
+            f"Lesson: {lesson_title}\n\n"
+            f"Task:\n"
+            f"Write a Python function to solve a given problem. "
+            f"For example, create a function that calculates the factorial of a number.\n\n"
+            f"Sample Solution:\n"
+            f"```python\n"
+            f"def factorial(n):\n"
+            f"    if n == 0:\n"
+            f"        return 1\n"
+            f"    return n * factorial(n - 1)\n"
+            f"```\n"
+            f"Now, generate a new coding challenge with a task description and sample solution."
+        )
+    else:
+        raise ValueError(f"Unknown question type: {question_type}")
+
+    logging.debug(f"Generated prompt: {prompt}")
+    return prompt
 # Define the parse_response function
-def parse_response(response_text, question_type): # Define the parse_response function with the response_text and question_type parameters
-    """Parse the response based on question type."""
-    try: # Try to parse the response
-        lines = response_text.split('\n') # Split the response text into lines
+def parse_response(response_text, question_type):
+    """Parse the response based on question type with detailed logging."""
+    try:
+        logging.debug("Raw response (line-by-line):")
+        lines = response_text.split('\n')
+        for i, line in enumerate(lines):
+            logging.debug(f"Line {i + 1}: {repr(line)}")
 
-        if question_type == "multiple_choice": # Check if the question type is multiple choice
-            parsed = parse_multiple_choice(lines) # Parse the multiple-choice question
-            if not parsed: # Check if the question was not parsed successfully
-                logging.error(f"Malformed multiple-choice question: {response_text}") # Log an error message
-            return parsed # Return the parsed question
-
-        elif question_type == "fill_in_the_blank": # Check if the question type is fill-in-the-blank
-            parsed = parse_fill_in_the_blank(lines) # Parse the fill-in-the-blank question
-            if not parsed: # Check if the question was not parsed successfully
-                logging.error(f"Malformed fill-in-the-blank question: {response_text}") # Log an error message
-            return parsed # Return the parsed question
-
-        elif question_type == "write_code": # Check if the question type is a code challenge
-            return parse_code_challenge(lines) # Parse the code challenge
-
-        elif question_type == "true_false": # Check if the question type is true/false
-            return parse_true_false(lines) # Parse the true/false question
-
-        elif question_type == "scenario": # Check if the question type is scenario-based
-            return parse_scenario(lines) # Parse the scenario question
-
-        else: # For unknown question types
-            logging.warning(f"Unknown question type: {question_type}") # Log a warning message
-            return None # Return None for unknown question types
-
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing response: {e}") # Log the error
-        return None # Return None if an error occurs
+        # Handle different question types
+        if question_type == "multiple_choice":
+            return parse_multiple_choice(lines)
+        elif question_type == "fill_in_the_blank":
+            return parse_fill_in_the_blank(lines)
+        elif question_type == "write_code":
+            return parse_code_challenge(lines)
+        elif question_type == "true_false":
+            return parse_true_false(lines)
+        elif question_type == "scenario":
+            return parse_scenario(lines)
+        else:
+            logging.warning(f"Unknown question type: {question_type}")
+            return None
+    except Exception as e:
+        logging.error(f"Error parsing response: {e}")
+        return None
 
 # Define the parse_true_false function
-def parse_true_false(lines): # Define the parse_true_false function with the lines parameter
-    """Parse and validate True/False questions with better handling for misplaced 'True or False:' prompts."""
-    try: # Try to parse the true/false question
+def parse_true_false(lines):
+    """Parse and validate True/False questions with improved handling."""
+    try:
         # Step 1: Clean and filter out empty lines
-        cleaned_lines = [line.strip() for line in lines if line.strip()] # Clean and filter out empty lines
+        cleaned_lines = [line.strip() for line in lines if line.strip()]
+        logging.debug(f"Cleaned lines: {cleaned_lines}")
 
-        # Step 2: Find the first line containing the actual question
-        question = None # Initialize the question variable
-        for line in cleaned_lines: # Iterate over the cleaned lines
-            if line.lower().startswith("true or false:"): # Check if the line starts with 'True or False:'
-                # Include the full content after 'True or False:'
-                question = line.split(":", 1)[-1].strip() # Extract the question content
-            elif not question: # If we missed the first pattern, take the first valid line as the question
-                # If we missed the first pattern, take the first valid line as the question
-                question = line # Set the question to the current line
-        if not question: # If no valid question is found
-            raise ValueError("Failed to extract a valid question.") # Raise a ValueError
+        # Step 2: Extract the question
+        question = None
+        for line in cleaned_lines:
+            # Skip headers like '### TRUE/FALSE QUESTION'
+            if line.startswith("###") or "Chapter" in line or "Lesson" in line:
+                continue
+
+            # If we find a valid question line, set it as the question
+            if line.lower().startswith("question:"):
+                question = line.split(":", 1)[-1].strip()  # Extract after 'Question:'
+            elif not question:
+                question = line  # Fallback: take the first non-header line as the question
+
+        if not question:
+            raise ValueError("Failed to extract a valid question.")
+
         # Step 3: Extract the correct answer from the last line
-        answer_line = cleaned_lines[-1].lower() # Get the last line in lowercase
-        correct_answer = "true" if "true" in answer_line else "false" # Determine the correct answer based on the last line
+        answer_line = cleaned_lines[-1].lower()
+        correct_answer = "true" if "true" in answer_line else "false"
+
         # Step 4: Return the structured question data
-        return { # Return the structured question data
-            "type": "true_false", # Set the question type to 'true_false'
-            "question": question, # Set the question text
-            "correct_answer": correct_answer, # Set the correct answer
+        return {
+            "type": "true_false",
+            "question": question,
+            "correct_answer": correct_answer,
         }
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing True/False question: {e}") # Log the error
-        return None # Return None if an error occurs
+    except Exception as e:
+        logging.error(f"Error parsing True/False question: {e}")
+        return None
 
 # Define the parse_scenario function
-def parse_scenario(lines): # Define the parse_scenario function with the lines parameter
-    """Parse scenario-based questions with detailed logging."""
-    logging.info(f"Starting to parse scenario question. Raw input: {lines}") # Log the raw input for debugging
-    try: # Try to parse the scenario question
-        question = " ".join(line.strip() for line in lines if line.strip()) # Join the non-empty lines into a single question
-        logging.info(f"Extracted scenario: {question}") # Log the extracted scenario
+def parse_scenario(lines):
+    """Parse scenario-based questions and extract the scenario and correct answer."""
+    try:
+        logging.debug("Parsing Scenario Question:")
 
-        return { # Return the structured question data
-            "type": "scenario", # Set the question type to 'scenario'
-            "question": question # Set the question text
-        } # Return the structured question data
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error during scenario parsing: {e}") # Log the error
-        return None # Return None if an error occurs
+        scenario = []
+        answer = []
+        current_section = None
+
+        for line in lines:
+            stripped = line.strip().lower()
+
+            if not stripped:
+                continue
+
+            if re.match(r"(###\s*)?scenario\s*:", stripped):
+                current_section = "scenario"
+                continue
+            elif re.match(r"(###\s*)?correct\s*answer\s*:", stripped):
+                current_section = "answer"
+                continue
+
+            if current_section == "scenario":
+                scenario.append(line.strip())
+            elif current_section == "answer":
+                answer.append(line.strip())
+
+        scenario_text = " ".join(scenario).strip()
+        answer_text = " ".join(answer).strip()
+
+        if not scenario_text or not answer_text:
+            raise ValueError("Incomplete scenario: Missing answer.")
+
+        logging.info(f"Extracted Scenario: {scenario_text}")
+        logging.info(f"Extracted Answer: {answer_text}")
+
+        return {
+            "type": "scenario",
+            "question": scenario_text,
+            "answer": answer_text
+        }
+
+    except Exception as e:
+        logging.error(f"Error during scenario parsing: {e}")
+        return None
 
 # Define the parse_multiple_choice function
-def parse_multiple_choice(lines): # Define the parse_multiple_choice function with the lines parameter
-    """Parse multiple-choice questions with improved handling of headers, spaces, and options.""" 
-    try: # Try to parse the multiple-choice question
+def parse_multiple_choice(lines):
+
+    """Parse multiple-choice questions with improved handling."""
+    try:
+        logging.debug("Parsing Multiple-Choice Question (line-by-line):")
+
         # Step 1: Clean each line and remove empty lines
-        cleaned_lines = [line.strip() for line in lines if line.strip()] # Clean and filter out empty lines
-        # Step 2: Filter out chapter/lesson headers and extra titles
-        question_lines = [ # Filter out chapter/lesson headers and extra titles
-            line for line in cleaned_lines  # Filter out chapter/lesson headers and extra titles
-            if not re.match(r'^(chapter|lesson|multiple[- ]?choice question[:]?.*)$', line, re.IGNORECASE) # Filter out chapter/lesson headers and extra titles
+        cleaned_lines = [line.strip() for line in lines if line.strip()]
+        logging.debug(f"Cleaned lines: {cleaned_lines}")
+
+        # Step 2: Filter out headers and unnecessary symbols
+        question_lines = [
+            re.sub(r'^[#*>\-]+\s?', '', line) 
+            for line in cleaned_lines 
+            if not re.match(r'^(chapter|lesson|multiple[- ]?choice.*)$', line, re.IGNORECASE)
         ]
-        # Step 3: Extract the question (first valid line)
-        question = None # Initialize the question variable
-        for i, line in enumerate(question_lines): # Iterate over the question lines
-            if not re.match(r'^[A-D]\)', line):  # Ensure it's not an option line
-                question = line # Set the question to the current line
-                question_lines = question_lines[i + 1:]  # Remaining lines are options and answers
-                break # Break the loop after finding the question
-        if not question: # If no valid question is found
-            raise ValueError("Question not found.") # Raise a ValueError
-        # Step 4: Extract answer options and correct answer
-        options = [] # Initialize the options list
-        correct_answer = None # Initialize the correct answer
-        for line in question_lines: # Iterate over the question lines
-            # Detect the correct answer in the line containing 'Correct Answer:'
-            if "correct answer:" in line.lower(): # Check if the line contains 'Correct Answer:'
-                match = re.search(r'correct answer:\s*([A-D])', line, re.IGNORECASE) # Extract the correct answer
-                if match: # If a match is found
-                    correct_answer = match.group(1).upper() # Set the correct answer
-                break  # No need to process further after finding the correct answer
-            # Extract valid options with labels (A, B, C, D)
-            option_match = re.match(r'^[A-D]\)\s*(.*)', line) # Match the option line
-            if option_match: # If a valid option is found
-                options.append(option_match.group(1).strip()) # Add the option to the list
-        # Step 5: Validate extracted components
-        if not question or not options or correct_answer is None: # Check if any component is missing
-            raise ValueError("Incomplete multiple-choice question.") # Raise a ValueError
+        logging.debug(f"Filtered lines: {question_lines}")
+
+        # Step 3: Initialize variables
+        question = []
+        options = {} # Store options as a dictionary
+        correct_answer = None
+
+        # Step 4: Extract the question, options, and correct answer
+        for line in question_lines:
+            # Detect options like 'A) Integer'
+            option_match = re.match(r'^([A-Da-d])\)\s*(.*)', line)
+            if option_match:
+                label = option_match.group(1).upper() # Extract the option label
+                option_text = option_match.group(2).strip() # Extract the option text
+                options[label] = option_text  # Store as { 'A': 'Integer', ... }
+                logging.debug(f"Option {label}: {option_text}")
+                continue  # Move to the next line
+
+            # Detect the correct answer
+            if "correct answer:" in line.lower():
+                match = re.search(r'correct answer:\s*([A-Da-d])', line, re.IGNORECASE)
+                if match:
+                    correct_answer = match.group(1).upper()
+                    logging.debug(f"Correct Answer: {correct_answer}")
+                continue
+
+            # Collect question text
+            question.append(line)
+
+        # Step 5: Validate parsed data
+        question_text = "\n".join(question).strip()
+        if not question_text or not options or correct_answer is None:
+            raise ValueError("Incomplete multiple-choice question.")
+
         # Step 6: Return structured data
-        return { # Return the structured question data
-            "type": "multiple_choice", # Set the question type to 'multiple_choice'
-            "question": question, # Set the question text
-            "options": options, # Set the answer options
-            "correct_answer": correct_answer, # Set the correct answer
+        return {
+            "type": "multiple_choice",
+            "question": question_text,
+            "options": options,  # Now stored as a dictionary with labels
+            "correct_answer": correct_answer,
         }
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing multiple-choice question: {e}") # Log the error
-        return None # Return None if an error occurs
+
+    except Exception as e:
+        logging.error(f"Error parsing multiple-choice question: {e}")
+        return None
 
 # Define the parse_fill_in_the_blank function
-def parse_fill_in_the_blank(lines): # Define the parse_fill_in_the_blank function with the lines parameter
-    """Parse fill-in-the-blank questions, ensuring proper separation of question and answer."""
-    try: # Try to parse the fill-in-the-blank question
+def parse_fill_in_the_blank(lines):
+    """Parse fill-in-the-blank questions and extract the correct answer."""
+    try:
         # Step 1: Clean and filter lines
-        cleaned_lines = [line.strip() for line in lines if line.strip()] # Clean and filter out empty lines
-        logging.debug(f"Cleaned lines: {cleaned_lines}") # Log the cleaned lines for debugging
+        cleaned_lines = [line.strip() for line in lines if line.strip()]
+        logging.debug(f"Cleaned lines: {cleaned_lines}")
 
-        # Step 2: Identify the question line and the answer (within parentheses)
-        question_line = next( # Extract the question line
-            (line for line in cleaned_lines if '________' in line or '_____' in line or '---' in line), # Find the line with '________' or '_____' or '---'
-            cleaned_lines[0] # Default to the first line if not found
+        # Step 2: Extract the question text with a placeholder
+        question_line = next(
+            (line for line in cleaned_lines if 'Insert' in line or '________' in line),
+            None
         )
-        # Step 3: Extract the answer from the last line (inside parentheses)
-        answer_match = re.search(r'\(([^)]+)\)', cleaned_lines[-1]) # Extract the answer from the last line
-        if answer_match: # If an answer is found
-            correct_answer = answer_match.group(1).strip()  # Extract the answer without parentheses
-        else: # If no answer is found
-            raise ValueError("No valid answer found.") # Raise a ValueError
-        # Step 4: Remove the answer from the question line for display
-        formatted_question = re.sub(r'\(([^)]+)\)', "", question_line).strip() # Remove the answer from the question line
-        # Step 5: Replace blanks with '________' for consistency
-        formatted_question = re.sub(r'(_{2,}|\[.*?\]|-{3,}|________+)', "________", formatted_question) # Replace blanks with '________'
-        # Step 6: Return structured data
-        return { # Return the structured question data
-            "type": "fill_in_the_blank", # Set the question type to 'fill_in_the
-            "question": formatted_question, # Set the question text
-            "correct_answer": correct_answer, # Set the correct answer
-        }
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing fill-in-the-blank: {e}") # Log the error
-        return None # Return None if an error occurs
 
+        if not question_line:
+            raise ValueError("No valid blank or placeholder found in the question.")
+
+        logging.debug(f"Extracted Question Line: {question_line}")
+
+        # Step 3: Extract the correct answer
+        answer_pattern = re.search(r'\(([^)]+)\)', question_line)
+        correct_answer = answer_pattern.group(1).strip() if answer_pattern else None
+
+        # If no answer found in parentheses, look for "Correct Answer:" line
+        if not correct_answer:
+            answer_line = next(
+                (line for line in cleaned_lines if line.lower().startswith("correct answer:")),
+                None
+            )
+            if answer_line:
+                correct_answer = answer_line.split(":", 1)[-1].strip()
+
+            if not correct_answer:
+                raise ValueError("No valid answer found in parentheses or 'Correct Answer:' line.")
+
+        logging.debug(f"Extracted Correct Answer: {correct_answer}")
+
+        # Step 4: Format the question with consistent blanks
+        formatted_question = re.sub(r'(_{2,}|\[.*?\]|-{3,}|Insert answer)', '________', question_line).strip()
+        formatted_question = re.sub(r'\s*\([^)]*\)', '', formatted_question).strip()
+        logging.debug(f"Formatted Question (With '________'): {formatted_question}")
+
+        # Step 5: Return the structured question data
+        return {
+            "type": "fill_in_the_blank",
+            "question": formatted_question,
+            "correct_answer": correct_answer,
+        }
+
+    except Exception as e:
+        logging.error(f"Error parsing fill-in-the-blank: {e}")
+        return None
 # Define the parse_code_challenge function
-def parse_code_challenge(lines): # Define the parse_code_challenge function with the lines parameter
-    """Parse code challenges with separate question and solution handling.""" 
-    logging.info(f"Parsing code challenge. Raw input: {lines}") # Log the raw input for debugging
+def parse_code_challenge(lines):
+    """Parse code challenges with clear task and solution extraction."""
+    try:
+        logging.info(f"Parsing code challenge. Raw input: {lines}")
 
-    try: # Try to parse the code challenge 
-        code_start = lines.index('```python') + 1 if '```python' in lines else 0    # Find the start of the code block
-        code_end = lines.index('```', code_start) if '```' in lines[code_start:] else len(lines) # Find the end of the code block
+        task_lines = []  # Store task description
+        solution_lines = []  # Store solution code
 
-        question_text = "\n".join(lines[:code_start]).strip() # Extract the question text
-        solution_code = "\n".join(lines[code_start:code_end]).strip() # Extract the solution code
+        in_solution_block = False  # Track whether inside solution block
 
-        logging.info(f"Extracted question: {question_text}") # Log the extracted question text
-        logging.info(f"Extracted solution:\n{solution_code}") # Log the extracted solution code
+        for line in lines:
+            stripped_line = line.strip()
 
-        return { # Return the structured question data
-            "type": "code_question", # Set the question type to 'code_question'
-            "question": question_text, # Set the question text
-            "solution": solution_code # Set the solution code
+            if stripped_line.startswith("```python"):
+                in_solution_block = True
+                continue
+
+            elif stripped_line == "```":
+                in_solution_block = False
+                continue
+
+            if in_solution_block:
+                solution_lines.append(line)
+            else:
+                task_lines.append(line)
+
+        # Join and clean lines
+        task_text = "\n".join(task_lines).strip()
+        solution_code = "\n".join(solution_lines).strip()
+
+        if not task_text or not solution_code:
+            raise ValueError("Incomplete code challenge: Missing task or solution.")
+
+        logging.info(f"Extracted Task:\n{task_text}")
+        logging.info(f"Extracted Solution:\n{solution_code}")
+
+        # Return 'question' instead of 'task' for consistency with retry logic
+        return {
+            "type": "write_code",
+            "question": task_text,  # Align with the retry logic
+            "solution": solution_code
         }
 
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing code challenge: {e}") # Log the error
-        return None # Return None if an error occurs
+    except Exception as e:
+        logging.error(f"Error parsing code challenge: {e}")
+        return None
+
+
+
 
 # Define the generate_review_questions function
 def generate_review_questions(progress, chapter): # Define the generate_review_questions function with the progress and chapter parameters
@@ -381,6 +612,7 @@ def generate_review_questions(progress, chapter): # Define the generate_review_q
 
 # Define the generate_cumulative_review function
 def generate_cumulative_review(progress):
+
     """Generate the cumulative review with 100 questions plus mistakes from chapter reviews."""
     questions = []
 
@@ -400,3 +632,43 @@ def generate_cumulative_review(progress):
 
     random.shuffle(questions)  # Shuffle the questions for randomness
     return questions[:100] # Return the first 100 questions
+
+def validate_answer_with_gpt(question_data, user_code=None, user_output=None):
+    """Use GPT to validate both coding challenges and scenario-based answers."""
+    try:
+        logging.debug("Sending validation request to GPT.")
+
+        # Construct the prompt based on the question type
+        validation_prompt = (
+            f"You are a Python tutor. A student has provided a solution to the following coding challenge.\n\n"
+            f"### Coding Challenge\n{question_data['question']}\n\n"
+            f"Sample Solution:\n{question_data['solution']}\n\n"
+            f"Student's Code:\n{user_code}\n\n"
+            f"Student's Code Output:\n{user_output}\n"
+            f"Is the student's solution correct? Respond only with 'Correct' or 'Incorrect' at the beginning, followed by any feedback."
+        )
+
+        # Send the prompt to GPT
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a Python tutor."},
+                {"role": "user", "content": validation_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=150
+        )
+
+        # Extract the GPT response
+        gpt_response = response.choices[0].message.content.strip()
+        logging.info(f"GPT Validation Response: {gpt_response}")
+
+        # Determine correctness based on the first word
+        if gpt_response.lower().startswith("correct"):
+            return True, gpt_response  # Correct answer with feedback
+        else:
+            return False, gpt_response  # Incorrect answer with feedback
+
+    except Exception as e:
+        logging.error(f"Error during GPT validation: {e}")
+        return False, "An error occurred during validation."
