@@ -10,7 +10,7 @@ chapters = {  # Dictionary of chapters with lessons and questions
             5: {"title": "Python Syntax and Code Structure", "question_count": 5, "complexity": 3}, # Lesson 5
             6: {"title": "Python Community and Documentation", "question_count": 3, "complexity": 1}, # Lesson 6
             7: {"title": "Troubleshooting Common Setup Issues", "question_count": 4, "complexity": 2}, # Lesson 7
-            8: {"title": "Review Test: Introduction to Python", "question_count": 12} # Lesson 8 (Review Test) Question Count = Sum of complexity levels
+            8: {"title": "Review Test: Introduction to Python"} # Lesson 8 (Review Test) Question Count = Sum of complexity levels
         }
     },
     2: {
