@@ -31,6 +31,7 @@ def initialize_database():
         user_code TEXT,
         user_output TEXT,
         user_errors TEXT,
+        original_lesson INTEGER,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )
     ''')

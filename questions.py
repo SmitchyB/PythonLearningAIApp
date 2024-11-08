@@ -192,101 +192,6 @@ def determine_question_types(title): # Define the determine_question_types funct
         # For other advanced lessons, all question types are allowed
         return ["multiple_choice", "true_false", "fill_in_the_blank", "scenario", "write_code"] # Return the allowed question types
 
-# Define the map_choice_to_type function
-def map_choice_to_type(choice): # Define the map_choice_to_type function with the choice parameter
-    logging.debug(f"map_choice_to_type received choice: {choice}") # Log the choice received by the function
-    return { # Return the corresponding question type based on the choice
-        '1': 'multiple_choice', # Return 'multiple_choice' for choice 1
-        '2': 'true_false', # Return 'true_false' for choice 2
-        '3': 'fill_in_the_blank', # Return 'fill_in_the_blank' for choice 3
-        '4': 'write_code', # Return 'write_code' for choice 4
-        '5': 'scenario' # Return 'scenario' for choice 5
-    }.get(choice, 'multiple_choice') # Return 'multiple_choice' by default
-
-# Define the generate_python_question function for the testing mode
-def generate_python_question(choice, max_retries=2): # Define the generate_python_question function with the choice and max_retries parameters
-    """Generate a Python-related question for testing purposes with retry support."""
-    try:
-        logging.debug("Starting generate_python_question function.") # Log a debug message
-
-        question_type = map_choice_to_type(choice) # Map the choice to a question type
-        logging.debug(f"Mapped question type: {question_type}") # Log the mapped question type
-
-        prompt = build_prompt(None, None, question_type) # Build a prompt based on the question type
-        if not prompt: # Check if the prompt is empty
-            logging.error("Prompt generation failed or returned empty.") # Log an error message
-            return None # Return None if the prompt is empty
-
-        logging.debug(f"Generated prompt: {prompt}") # Log the generated prompt
-
-        # Check if the API client is initialized properly.
-        if not hasattr(client, 'chat'): # Check if the client has the 'chat' attribute
-            logging.error("API client is not properly initialized.") # Log an error message
-            return None # Return None if the client is not properly initialized
-
-        # Helper function to call the API with retries
-        def send_request_with_retries(retries_left): # Define the send_request_with_retries function with the retries_left parameter
-            try:
-                logging.debug(f"Sending request to OpenAI API. Retries left: {retries_left}") # Log the API request
-
-                response = client.chat.completions.create( # Call the OpenAI API to generate the content
-                    model="gpt-3.5-turbo", # Use the GPT-3.5-turbo model
-                    messages=[ # Define the messages to send to the API
-                        {"role": "system", "content": "You are a Python tutor."}, # Define the system message
-                        {"role": "user", "content": prompt}, # Define the user message
-                    ],
-                    temperature=0.7, # Set the temperature to 0.7 for diversity
-                    max_tokens=500 # Limit the token count for the response
-                )
-
-                logging.debug(f"Received API response: {response}") # Log the API response
-
-                if not response or not response.choices: # Check if the response is empty or improperly formatted
-                    logging.warning("API response is empty or improperly formatted.") # Log a warning message
-                    raise ValueError("Invalid API response.") # Raise a ValueError
-
-                return response.choices[0].message.content.strip() # Return the content from the API response
-
-            except Exception as e: # Catch any exceptions
-                logging.error(f"API request failed: {e}") # Log the error
-                if retries_left > 0: # Check if there are retries left
-                    return send_request_with_retries(retries_left - 1) # Retry the request
-                else: # If no retries left
-                    logging.error("Exceeded maximum retries for API request.") # Log an error message
-                    return None # Return None
-
-        # Call the helper function with retries
-        question_text = send_request_with_retries(max_retries) # Send the request to the API with retries
-        if not question_text: # Check if the question text is empty
-            logging.error("Failed to generate a valid question after retries.") # Log an error message
-            return None # Return None if the question text is empty
-
-        logging.debug(f"Extracted question text: {question_text}") # Log the extracted question text
-
-        question_data = parse_response(question_text, question_type) # Parse the response to extract the question data
-        if not question_data:
-            logging.warning("Invalid question format. Retrying...") # Log a warning message
-
-            # If retries are exhausted, return None.
-            if max_retries > 0: # Check if there are retries left
-                return generate_python_question(choice, max_retries - 1) # Retry generating the question
-            else: # If no retries left
-                logging.error("Max retries exhausted. Unable to generate a valid question.") # Log an error message
-                return None # Return None
-
-        logging.debug(f"Parsed question data: {question_data}") # Log the parsed question data
-
-        if "question" in question_data: # Check if the question data contains the 'question' key
-            logging.debug("Successfully generated question.") # Log a success message
-            return question_data # Return the question data
-        else: # If the question data is missing the 'question' key 
-            logging.error("Parsed question data is missing the 'question' key.")    # Log an error message
-            return None # Return None
-
-    except Exception as e: # Catch any exceptions
-        logging.error(f"Error generating Python question: {e}") # Log the error
-        return None # Return None
-
 # Define the build_prompt function
 def build_prompt(chapter, lesson, question_type):
     """Generate a prompt based on the given question type, chapter, and lesson.""" 
@@ -702,12 +607,16 @@ def generate_review_questions(progress, chapter):
         generated_questions = generate_questions_from_content(
             chapter, lesson_num, lesson_content, question_count=question_count
         )
+
+        # Add the original_lesson metadata to each question
+        for question in generated_questions:
+            question['original_lesson'] = lesson_num  # Add original_lesson to question data
+            
         questions.extend(generated_questions)
 
     # Shuffle the questions
     random.shuffle(questions)
     return questions
-
 
 # Define the fill_missing_questions function
 def fill_missing_questions(existing_questions, chapter, total_needed): # Define the fill_missing_questions function with the existing_questions, chapter, and total_needed parameters
@@ -720,27 +629,61 @@ def fill_missing_questions(existing_questions, chapter, total_needed): # Define 
     return existing_questions # Return the existing questions
 
 # Define the generate_cumulative_review function
-def generate_cumulative_review(progress): # Define the generate_cumulative_review function with the progress parameter
-
+def generate_cumulative_review(progress):
     """Generate the cumulative review with 100 questions plus mistakes from chapter reviews."""
-    questions = [] # Initialize an empty list to store the questions
+    questions = []
 
-    # Collect all mistakes from chapter reviews
-    for chapter in range(1, 21): # Iterate over the chapters
-        mistake_count = progress.cumulative_review_mistakes.get(chapter, 0) # Retrieve the mistake count
-        if mistake_count > 0: # Check if there are mistakes
-            lesson_content = generate_lesson_content(chapter, 8)  # Review content
-            questions.extend(generate_questions_from_content(lesson_content, mistake_count))
+    # Collect mistakes from chapter reviews (lessons where lesson = 8)
+    try:
+        with sqlite3.connect('progress.db') as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                SELECT chapter, original_lesson
+                FROM mistakes
+                WHERE user_id = ? AND lesson = 8
+                ''',
+                (progress.user_id,)
+            )
+            mistakes = cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(f"Failed to retrieve mistakes from database: {e}")
+        mistakes = []
 
-    # Add random questions from all chapters until we reach 100 total questions
-    while len(questions) < 100: # Loop until we have 100 questions
-        chapter = random.randint(1, 20) # Randomly select a chapter
-        lesson = random.randint(1, 7) # Randomly select a lesson
-        lesson_content = generate_lesson_content(chapter, lesson) # Generate the lesson content
-        questions.extend(generate_questions_from_content(lesson_content, 1)) # Generate questions based on the lesson content
+    # For each mistake, generate a question based on the chapter and original lesson
+    for mistake in mistakes:
+        chapter, original_lesson = mistake
+        # Retrieve the lesson content from the database
+        lesson_content = generate_lesson_content(progress, chapter, original_lesson)
+        # Generate a question based on the lesson content
+        generated_questions = generate_questions_from_content(
+            chapter, original_lesson, lesson_content, question_count=1
+        )
+        # Add the question to the list
+        for question in generated_questions:
+            question['chapter'] = chapter
+            question['lesson'] = original_lesson
+            question['original_lesson'] = original_lesson
+        questions.extend(generated_questions)
 
-    random.shuffle(questions)  # Shuffle the questions for randomness
-    return questions[:100] # Return the first 100 questions
+    # Now, generate random questions from all chapters until we reach 100 + number of mistakes
+    total_needed = 100 + len(mistakes)
+    while len(questions) < total_needed:
+        chapter = random.randint(1, 20)
+        lesson = random.randint(1, 7)
+        # Retrieve the lesson content
+        lesson_content = generate_lesson_content(progress, chapter, lesson)
+        generated_questions = generate_questions_from_content(
+            chapter, lesson, lesson_content, question_count=1
+        )
+        for question in generated_questions:
+            question['chapter'] = chapter
+            question['lesson'] = lesson
+        questions.extend(generated_questions)
+
+    random.shuffle(questions)
+    return questions[:total_needed]
+
 
 # Define the generate_questions_from_content function
 def validate_answer_with_gpt(question_data, user_response=None, user_code=None, user_output=None): # Define the validate_answer_with_gpt function with the question_data, user_response, user_code, and user_output parameters
