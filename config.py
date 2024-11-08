@@ -1,16 +1,16 @@
 # Description: Configuration file for the Python Learning Game setting up the chapters and lessons structure
 chapters = {  # Dictionary of chapters with lessons and questions
-    1: { # Chapter 1
-        "title": "Introduction to Python and Setting Up the Environment", # Chapter title
-        "lessons": { # Dictionary of lessons in the chapter
-            1: {"title": "What is Python?", "question_count": 3, "complexity": 1}, # Lesson 1
-            2: {"title": "Installing Python and Setting up PATH", "question_count": 4, "complexity": 2}, # Lesson 2
-            3: {"title": "Introduction to Python IDEs", "question_count": 5, "complexity": 2}, # Lesson 3
-            4: {"title": "Running Your First Python Program", "question_count": 3, "complexity": 1}, # Lesson 4
-            5: {"title": "Python Syntax and Code Structure", "question_count": 5, "complexity": 3}, # Lesson 5
-            6: {"title": "Python Community and Documentation", "question_count": 3, "complexity": 1}, # Lesson 6
-            7: {"title": "Troubleshooting Common Setup Issues", "question_count": 4, "complexity": 2}, # Lesson 7
-            8: {"title": "Review Test: Introduction to Python"} # Lesson 8 (Review Test) Question Count = Sum of complexity levels
+    1: {
+        "title": "Introduction to Python and Setting Up the Environment",
+        "lessons": {
+            1: {"title": "What is Python?", "question_count": 3, "complexity": 1},
+            2: {"title": "Installing Python and Setting up PATH", "question_count": 4, "complexity": 2},
+            3: {"title": "Introduction to Python IDEs", "question_count": 5, "complexity": 2},
+            4: {"title": "Running Your First Python Program", "question_count": 3, "complexity": 1},
+            5: {"title": "Python Syntax and Code Structure", "question_count": 5, "complexity": 3},
+            6: {"title": "Python Community and Documentation", "question_count": 3, "complexity": 1},
+            7: {"title": "Troubleshooting Common Setup Issues", "question_count": 4, "complexity": 2},
+            8: {"title": "Review Test: Introduction to Python"}
         }
     },
     2: {
@@ -260,12 +260,12 @@ chapters = {  # Dictionary of chapters with lessons and questions
             8: {"title": "Review Test: Deploying Python Applications", "question_count": 14}
         }
     },
-    21: { # Chapter 21
-        "title": "Cumulative Review Test: All Chapters", # Chapter title
-        "lessons": { # Dictionary of lessons in the chapter
-            1: { # Lesson 1
-                "title": "Final Cumulative Review", # Lesson title
-                "question_count": 100 # Question count for the final cumulitive review test
+    21: {
+        "title": "Cumulative Review Test: All Chapters",
+        "lessons": {
+            1: {
+                "title": "Final Cumulative Review",
+                "question_count": 100
             }
         }
     }

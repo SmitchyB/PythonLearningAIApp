@@ -1,12 +1,12 @@
-import sqlite3
+import sqlite3 # Import the SQLite3 module to interact with the SQLite database
 
-def initialize_database():
+def initialize_database(): # Function to initialize the SQLite database
     # Connect to the SQLite database (creates the file if it doesn't exist)
-    conn = sqlite3.connect('progress.db')
-    cursor = conn.cursor()
+    conn = sqlite3.connect('progress.db') # The database file is named progress.db
+    cursor = conn.cursor() # Create a cursor object to interact with the database
 
     # Create the users table (if it doesn't already exist)
-    cursor.execute('''
+    cursor.execute(''' 
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -60,9 +60,8 @@ def initialize_database():
         FOREIGN KEY (user_id) REFERENCES users(id)
     )
     ''')
-    # Commit changes and close the connection
-    conn.commit()
-    conn.close()
+    conn.commit() # Commit the changes to the database
+    conn.close() # Close the connection to the database
 
 # Call the function to initialize the database
 initialize_database()

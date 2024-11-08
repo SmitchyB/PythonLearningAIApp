@@ -1,127 +1,103 @@
+from dotenv import load_dotenv  # Import the load_dotenv function from the dotenv module to load environment variables
+import os # Import the os module for environment variables
+import random   # Import the random module for random number generation
+from colorama import Fore   # Import the Fore class from the colorama module for colored output
+from config import chapters # Import the chapters dictionary from the config module for lesson details
+from openai import OpenAI  # Import the OpenAI class from the openai module for interacting with the OpenAI API
+from fuzzywuzzy import fuzz # Import the fuzz function from the fuzzywuzzy module for string similarity comparison
+import re # Import the re module for regular expressions operations
+import sqlite3 # Import the sqlite3 module for database operations 
 
-from dotenv import load_dotenv  # Import the load_dotenv function from the dotenv module
-import os # Import the os module
-import random   # Import the random module
-from colorama import Fore   # Import the Fore class from the colorama module
-from config import chapters # Import the chapters dictionary from the config module
-from openai import OpenAI  # Import the OpenAI class from the openai module
-import logging # Import the logging module for logging messages
-from fuzzywuzzy import fuzz # Import the fuzz function from the fuzzywuzzy module for string similarity
-import re # Import the re module for regular expressions
-import sqlite3 # Import the sqlite3 module for database operations
-# Configure logging to display only your function logs
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("requests").setLevel(logging.WARNING)
-format = Fore.CYAN + "%(asctime)s %(levelname)s: %(message)s" + Fore.RESET
 # Load the environment variables
 load_dotenv()
 
-# Retrieve the API key
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY") # Retrieve the OpenAI API key from the environment variables
 
-# Check if the API key is not found
-if not api_key:
-    # Raise a ValueError
-    raise ValueError("API key not found. Check your .env file.")
-
-# Create an OpenAI client
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=api_key) # Create an OpenAI client with the API key
 
 stored_questions = set()  # Store seen questions globally
 
-# Define the is_question_unique function
+# Function to determine if a question is unique based on a similarity threshold
 def is_question_unique(new_question, threshold=70): # Set the default threshold to 70
-    """Check if a new question is unique based on similarity.""" 
     for stored_question in stored_questions: # Iterate over the stored questions
         similarity = fuzz.ratio(new_question.lower(), stored_question.lower()) # Calculate the similarity ratio
         if similarity > threshold: # Check if the similarity is above the threshold
             return False # Return False if the question is not unique
     return True # Return True if the question is unique
 
-# Define the store_question function
+# Function to store the question in the global set
 def store_question(question_text): # Define the store_question function with the question_text parameter
-    """Store a unique question to avoid duplicates."""
     stored_questions.add(question_text) # Add the question to the stored questions set
 
-# Define the reset_similarity_database function
+# Function to reset the similarity database 
 def reset_similarity_database(): # Define the reset_similarity_database function
-    """Clear the stored questions between lessons."""
     global stored_questions # Access the global stored_questions set
     stored_questions.clear() # Clear the stored questions set
 
-# Define the generate_lesson_content function
-def generate_lesson_content(progress, chapter, lesson):
-    """Retrieve or generate lesson content for a specific lesson."""
-    try:
+# Function to generate lesson content or retrieve it from the database
+def generate_lesson_content(progress, chapter, lesson): # Define the generate_lesson_content function with the progress, chapter, and lesson parameters
+    try: # Try block to handle exceptions
         # Check if the lesson content is already stored in the database
-        with sqlite3.connect('progress.db') as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        with sqlite3.connect('progress.db') as conn: # Connect to the database
+            cursor = conn.cursor() # Create a cursor object
+            cursor.execute( # Execute a query to retrieve the stored content
                 '''
                 SELECT content
                 FROM lesson_content
                 WHERE user_id = ? AND chapter = ? AND lesson = ?
                 ''',
-                (progress.user_id, chapter, lesson)
+                (progress.user_id, chapter, lesson) # Provide the user ID, chapter, and lesson as parameters
             )
-            row = cursor.fetchone()
-            if row:
-                logging.info(f"Retrieved stored content for Chapter {chapter} Lesson {lesson}")
-                return row[0]  # Return the stored content
+            row = cursor.fetchone() # Fetch the row from the database
+            if row: # Check if the row is not empty
+                return row[0]  # Return the stored content 
 
-        # If content is not found, generate it
-        chapter_title = chapters[chapter]["title"]
-        lesson_title = chapters[chapter]["lessons"][lesson]["title"]
+        chapter_title = chapters[chapter]["title"] # Retrieve the chapter title
+        lesson_title = chapters[chapter]["lessons"][lesson]["title"] # Retrieve the lesson title
 
-        prompt = (
-            f"Provide an educational and engaging lesson on the following topic:\n"
-            f"Chapter: {chapter_title}\n"
-            f"Lesson: {lesson_title}\n"
-            f"The lesson should include 2-3 paragraphs explaining the concept, examples, "
-            f"and key points to remember."
+        prompt = ( # Define the prompt string
+            f"Provide an educational and engaging lesson on the following topic:\n" # Include the prompt for the lesson content
+            f"Chapter: {chapter_title}\n" # Include the chapter title
+            f"Lesson: {lesson_title}\n" # Include the lesson title
+            f"The lesson should include 2-3 paragraphs explaining the concept, examples, " # Include the requirements for the lesson content
+            f"and key points to remember." # Include the requirements for the lesson content
         )
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "You are a Python tutor."},
-                      {"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=1000
+        response = client.chat.completions.create( # Call the OpenAI API to generate the lesson content
+            model="gpt-3.5-turbo", # Use the GPT-3.5-turbo model
+            messages=[{"role": "system", "content": "You are a Python tutor."}, # Define the system message
+                      {"role": "user", "content": prompt}], # Define the user message
+            temperature=0.7, # Set the temperature to 0.7 
+            max_tokens=1000 # Limit the token count for the response
         )
 
-        lesson_content = response.choices[0].message.content.strip()
+        lesson_content = response.choices[0].message.content.strip() # Extract the content from the API response
 
         # Store the generated content in the database
-        with sqlite3.connect('progress.db') as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        with sqlite3.connect('progress.db') as conn: # Connect to the database
+            cursor = conn.cursor() # Create a cursor object
+            cursor.execute( # Execute a query to store the generated content
                 '''
-                INSERT INTO lesson_content (user_id, chapter, lesson, content)
+                INSERT INTO lesson_content (user_id, chapter, lesson, content) 
                 VALUES (?, ?, ?, ?)
                 ''',
-                (progress.user_id, chapter, lesson, lesson_content)
-            )
-            conn.commit()
-            logging.info(f"Stored generated content for Chapter {chapter} Lesson {lesson}")
+                (progress.user_id, chapter, lesson, lesson_content) # Provide the user ID, chapter, lesson, and content as parameters
+            ) 
+            conn.commit() # Commit the transaction
 
-        return lesson_content
+        return lesson_content # Return the generated lesson content
 
-    except Exception as e:
-        logging.error(f"Error generating or retrieving lesson content: {e}")
-        return "Unable to retrieve or generate lesson content."
+    except Exception as e: # Catch any exceptions
+        return "Unable to retrieve or generate lesson content." # Return a default message
 
-
-# Define the generate_questions_from_content function
+# Function to generate questions based on the lesson content
 def generate_questions_from_content(chapter, lesson, content, question_count, max_retries=2): # Define the generate_questions_from_content function with the chapter, lesson, content, question_count, and max_retries parameters
-    """Generate a set of questions based on the lesson content with retry functionality."""
     questions = []  # Initialize an empty list to store the questions
     allowed_types = determine_question_types(chapters[chapter]['lessons'][lesson]['title'].lower()) # Determine the allowed question types based on the lesson title and store in allowed_types
 
+    #function to send request to OpenAI API with retries
     def send_request_with_retries(prompt, retries_left): # Define the send_request_with_retries function with the prompt and retries_left parameters
-        """Send request to OpenAI API with retry support.""" 
         try: # Try block to handle exceptions
-            logging.debug(f"Sending request to OpenAI API. Retries left: {retries_left}") # Log the API request
-
             response = client.chat.completions.create( # Call the OpenAI API to generate the content
                 model="gpt-3.5-turbo", # Use the GPT-3.5-turbo model 
                 messages=[  # Define the messages to send to the API
@@ -133,17 +109,14 @@ def generate_questions_from_content(chapter, lesson, content, question_count, ma
             )
 
             if not response or not response.choices: # Check if the response is empty or improperly formatted
-                logging.warning("API response is empty or improperly formatted.") # Log a warning message
                 raise ValueError("Invalid API response.") # Raise a ValueError
 
             return response.choices[0].message.content.strip() # Return the content from the API response
 
         except Exception as e: # Catch any exceptions
-            logging.error(f"API request failed: {e}") # Log the error
             if retries_left > 0: # Check if there are retries left
                 return send_request_with_retries(prompt, retries_left - 1) # Retry the request
             else: # If no retries left
-                logging.error("Exceeded maximum retries for API request.") # Log an error message
                 return None # Return None
 
     while len(questions) < question_count: # Loop until the desired number of questions is generated
@@ -159,7 +132,6 @@ def generate_questions_from_content(chapter, lesson, content, question_count, ma
             question_text = send_request_with_retries(prompt, max_retries) # Send the request to the API with retries
 
             if not question_text: # Check if the question text is empty
-                logging.warning("Failed to generate a valid question after retries.") # Log a warning message
                 continue  # Try generating another question
 
             question_data = parse_response(question_text, question_type) # Parse the response to extract the question data
@@ -171,14 +143,14 @@ def generate_questions_from_content(chapter, lesson, content, question_count, ma
                 continue  # Skip duplicates or invalid questions
 
         except Exception as e: # Catch any exceptions
-            logging.error(f"Error generating question: {e}") # Log the error
+            print(f"Error generating question: {e}") # Log the error
 
     if len(questions) < question_count: # Check if not enough questions were generated
-        logging.warning("Not enough unique questions generated.") # Log a warning message
+        print("Not enough unique questions generated.") # Log a warning message
 
     return questions # Return the generated questions
 
-# Define the determine_question_types function
+# Function to determine the allowed question types based on the lesson title
 def determine_question_types(title): # Define the determine_question_types function with the title parameter
     """Determine allowed question types based on the lesson title."""
     if any(keyword in title for keyword in ["introduction", "overview", "getting started", # Check if the title contains introductory keywords
@@ -192,15 +164,11 @@ def determine_question_types(title): # Define the determine_question_types funct
         # For other advanced lessons, all question types are allowed
         return ["multiple_choice", "true_false", "fill_in_the_blank", "scenario", "write_code"] # Return the allowed question types
 
-# Define the build_prompt function
-def build_prompt(chapter, lesson, question_type):
-    """Generate a prompt based on the given question type, chapter, and lesson.""" 
-    
-    # Retrieve the chapter and lesson titles with fallback values.
+# Function to build a prompt based on the question type, chapter, and lesson
+def build_prompt(chapter, lesson, question_type): # Define the build_prompt function with the chapter, lesson, and question_type parameters
+
     chapter_title = chapters.get(chapter, {}).get('title', "General Python Knowledge") # Retrieve the chapter title with a fallback value
     lesson_title = chapters.get(chapter, {}).get('lessons', {}).get(lesson, {}).get('title', "Fundamental Concepts") # Retrieve the lesson title with a fallback value
-
-    logging.debug(f"Building prompt with chapter: {chapter_title}, lesson: {lesson_title}, question type: {question_type}") # Log the prompt building process
 
     if question_type == "multiple_choice": # Check if the question type is 'multiple_choice'
         prompt = ( # Define the prompt string
@@ -268,18 +236,12 @@ def build_prompt(chapter, lesson, question_type):
     else: # If the question type is unknown
         raise ValueError(f"Unknown question type: {question_type}") # Raise a ValueError with the unknown question type
  
-    logging.debug(f"Generated prompt: {prompt}") # Log the generated prompt
     return prompt # Return the generated prompt
 
-# Define the parse_response function
+# Function to parse the response from the OpenAI API
 def parse_response(response_text, question_type): # Define the parse_response function with the response_text and question_type parameters
-    """Parse the response based on question type with detailed logging.""" 
     try: # Try block to handle exceptions
-        logging.debug("Raw response (line-by-line):") # Log the raw response
         lines = response_text.split('\n') # Split the response text into lines
-        for i, line in enumerate(lines): # Iterate over the lines
-            logging.debug(f"Line {i + 1}: {repr(line)}") # Log the line number and content
-
         # Handle different question types
         if question_type == "multiple_choice": # Check if the question type is 'multiple_choice'
             return parse_multiple_choice(lines) # Parse the multiple-choice question
@@ -292,19 +254,16 @@ def parse_response(response_text, question_type): # Define the parse_response fu
         elif question_type == "scenario": # Check if the question type is 'scenario'
             return parse_scenario(lines) # Parse the scenario-based question
         else: # If the question type is unknown
-            logging.warning(f"Unknown question type: {question_type}") # Log a warning message
             return None # Return None
     except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing response: {e}") # Log the error
         return None # Return None
 
-# Define the parse_true_false function
+# Function to parse a true/false question
 def parse_true_false(lines): # Define the parse_true_false function with the lines parameter
-    """Parse and validate True/False questions with improved handling."""
+
     try: # Try block to handle exceptions
         # Step 1: Clean and filter out empty lines 
         cleaned_lines = [line.strip() for line in lines if line.strip()] # Clean and filter out empty lines
-        logging.debug(f"Cleaned lines: {cleaned_lines}") # Log the cleaned lines
 
         # Step 2: Extract the question
         question = None # Initialize the question variable as None
@@ -333,15 +292,12 @@ def parse_true_false(lines): # Define the parse_true_false function with the lin
             "correct_answer": correct_answer, # Include the correct answer
         } 
     except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing True/False question: {e}") # Log the error
         return None # Return None
 
-# Define the parse_scenario function
+# Function to parse a scenario-based question
 def parse_scenario(lines): # Define the parse_scenario function with the lines parameter
-    """Parse scenario-based questions and extract the scenario and correct answer."""
-    try:
-        logging.debug("Parsing Scenario Question:") # Log the parsing process
 
+    try:
         scenario = [] # Initialize an empty list to store the scenario
         answer = [] # Initialize an empty list to store the answer
         current_section = None # Initialize the current_section variable as None
@@ -370,9 +326,6 @@ def parse_scenario(lines): # Define the parse_scenario function with the lines p
         if not scenario_text or not correct_answer: # Check if the scenario or answer text is empty
             raise ValueError("Incomplete scenario: Missing answer.") # Raise a ValueError
 
-        logging.info(f"Extracted Scenario: {scenario_text}") # Log the extracted scenario
-        logging.info(f"Extracted Answer: {correct_answer}") # Log the extracted answer
-
         return { # Return the structured question data
             "type": "scenario", # Include the question type
             "question": scenario_text, # Include the scenario text
@@ -380,19 +333,14 @@ def parse_scenario(lines): # Define the parse_scenario function with the lines p
         }
 
     except Exception as e:  # Catch any exceptions
-        logging.error(f"Error during scenario parsing: {e}") # Log the error
         return None # Return None
 
-# Define the parse_multiple_choice function
+# Function to parse a multiple-choice question
 def parse_multiple_choice(lines): # Define the parse_multiple_choice function with the lines parameter
 
-    """Parse multiple-choice questions with improved handling."""
     try: # Try block to handle exceptions
-        logging.debug("Parsing Multiple-Choice Question (line-by-line):") # Log the parsing process
-
         # Step 1: Clean each line and remove empty lines
         cleaned_lines = [line.strip() for line in lines if line.strip()] # Clean and filter out empty lines
-        logging.debug(f"Cleaned lines: {cleaned_lines}") # Log the cleaned lines
 
         # Step 2: Filter out headers and unnecessary symbols
         question_lines = [ # Filter out headers and unnecessary symbols
@@ -400,7 +348,6 @@ def parse_multiple_choice(lines): # Define the parse_multiple_choice function wi
             for line in cleaned_lines  # Iterate over the cleaned lines
             if not re.match(r'^(chapter|lesson|multiple[- ]?choice.*)$', line, re.IGNORECASE) # Filter out headers
         ]
-        logging.debug(f"Filtered lines: {question_lines}") # Log the filtered lines
 
         # Step 3: Initialize variables
         question = [] # Initialize an empty list to store the question
@@ -415,7 +362,6 @@ def parse_multiple_choice(lines): # Define the parse_multiple_choice function wi
                 label = option_match.group(1).upper() # Extract the option label
                 option_text = option_match.group(2).strip() # Extract the option text
                 options[label] = option_text  # Store as { 'A': 'Integer', ... }
-                logging.debug(f"Option {label}: {option_text}") # Log the option
                 continue  # Move to the next line
 
             # Detect the correct answer
@@ -423,7 +369,6 @@ def parse_multiple_choice(lines): # Define the parse_multiple_choice function wi
                 match = re.search(r'correct answer:\s*([A-Da-d])', line, re.IGNORECASE) # Match the correct answer pattern
                 if match: # Check if the correct answer pattern is matched
                     correct_answer = match.group(1).upper() # Extract the correct answer
-                    logging.debug(f"Correct Answer: {correct_answer}") # Log the correct answer
                 continue # Move to the next line
  
             # Collect question text
@@ -443,17 +388,14 @@ def parse_multiple_choice(lines): # Define the parse_multiple_choice function wi
         }
 
     except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing multiple-choice question: {e}") # Log the error
         return None # Return None
 
-# Define the parse_fill_in_the_blank function
+# Function to parse a fill-in-the-blank question
 def parse_fill_in_the_blank(lines): # Define the parse_fill_in_the_blank function with the lines parameter
-    """Parse fill-in-the-blank questions and extract the correct answer.""" 
+
     try:
         # Step 1: Clean and filter lines
         cleaned_lines = [line.strip() for line in lines if line.strip()] # Clean and filter out empty lines
-        logging.debug(f"Cleaned lines: {cleaned_lines}") # Log the cleaned lines
-
         # Step 2: Extract the question line with a placeholder
         question_line = next( # Extract the question line with a placeholder
             (line for line in cleaned_lines if 'Insert' in line or '________' in line), # Find lines with placeholders
@@ -463,15 +405,12 @@ def parse_fill_in_the_blank(lines): # Define the parse_fill_in_the_blank functio
         if not question_line:   # If no valid question line found
             raise ValueError("No valid blank or placeholder found in the question.") # Raise a ValueError
 
-        logging.debug(f"Extracted Question Line: {question_line}") # Log the extracted question line
-
         # Step 3: Validate if the blank is properly placed
         if (
             question_line.endswith('? ________') or  # Avoid if blank follows a question mark
             question_line.endswith('.') or           # Avoid if sentence ends with a period
             question_line == '________'              # Avoid if it's a lone blank
         ):
-            logging.warning(f"Invalid placement of blank in question: {question_line}") # Log a warning message
             raise ValueError("Improperly formatted fill-in-the-blank question.") # Raise a ValueError
 
         # Step 4: Extract the correct answer
@@ -490,12 +429,9 @@ def parse_fill_in_the_blank(lines): # Define the parse_fill_in_the_blank functio
             if not correct_answer: # Check if the correct answer is still missing
                 raise ValueError("No valid answer found in parentheses or 'Correct Answer:' line.") # Raise a ValueError
 
-        logging.debug(f"Extracted Correct Answer: {correct_answer}") # Log the extracted correct answer
-
         # Step 5: Format the question with consistent blanks
         formatted_question = re.sub(r'(_{2,}|\[.*?\]|-{3,}|Insert answer)', '________', question_line).strip() # Format the question with consistent blanks
         formatted_question = re.sub(r'\s*\([^)]*\)', '', formatted_question).strip() # Remove any parentheses from the question
-        logging.debug(f"Formatted Question (With '________'): {formatted_question}") # Log the formatted question
 
         # Step 6: Return the structured question data
         return { # Return the structured question data
@@ -505,14 +441,12 @@ def parse_fill_in_the_blank(lines): # Define the parse_fill_in_the_blank functio
         }
 
     except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing fill-in-the-blank: {e}") # Log the error
         return None # Return None
 
-# Define the parse_code_challenge function
-def parse_code_challenge(lines):
-    """Parse code challenges with clear task and solution extraction."""
+# Function to parse a code challenge question
+def parse_code_challenge(lines): # Define the parse_code_challenge function with the lines parameter
+
     try: # Try block to handle exceptions
-        logging.info(f"Parsing code challenge. Raw input: {lines}") # Log the parsing process
 
         task_lines = []  # Store task description
         solution_lines = []  # Store solution code
@@ -542,9 +476,6 @@ def parse_code_challenge(lines):
         if not task_text or not correct_answer: # Check if the task or solution is missing
             raise ValueError("Incomplete code challenge: Missing task or solution.") # Raise a ValueError
 
-        logging.info(f"Extracted Task:\n{task_text}") # Log the extracted task
-        logging.info(f"Extracted Solution:\n{correct_answer}") # Log the extracted solution
-
         # Return 'question' instead of 'task' for consistency with retry logic
         return {
             "type": "write_code", # Include the question type
@@ -553,74 +484,67 @@ def parse_code_challenge(lines):
         }
 
     except Exception as e: # Catch any exceptions
-        logging.error(f"Error parsing code challenge: {e}") # Log the error
         return None # Return None
 
-# Define the generate_review_questions function
-def generate_review_questions(progress, chapter):
-    """Generate review questions for a specific chapter based on lesson complexities and mistakes."""
-    questions = []
-    lessons = chapters[chapter]['lessons']
+# Function to generate review questions for a specific chapter
+def generate_review_questions(progress, chapter): # Define the generate_review_questions function with the progress and chapter parameters
 
-    # Determine question counts per lesson
-    lesson_question_counts = {}
+    questions = [] # Initialize an empty list to store the questions
+    lessons = chapters[chapter]['lessons'] # Retrieve the lessons for the specified chapter
 
-    for lesson_num, lesson in lessons.items():
-        if lesson_num == 8:
+    lesson_question_counts = {} # Initialize an empty dictionary to store the question counts per lesson
+
+    for lesson_num, lesson in lessons.items(): # Iterate over the lessons
+        if lesson_num == 8: # Check if the lesson number is 8
             continue  # Skip the review test lesson
 
-        # Get the base question count from lesson complexity
-        base_question_count = lesson.get('complexity', 1)
+        base_question_count = lesson.get('complexity', 1) # Retrieve the base question count for the lesson based on complexity level set in the config.py file
 
-        # Check if the user made mistakes in this lesson
-        mistake_exists = False
-        try:
-            with sqlite3.connect('progress.db') as conn:
-                cursor = conn.cursor()
-                cursor.execute(
+        mistake_exists = False # Initialize the mistake_exists variable as False
+        try: # Try block to handle exceptions
+            with sqlite3.connect('progress.db') as conn: # Connect to the database
+                cursor = conn.cursor() # Create a cursor object
+                cursor.execute( # Execute a query to check for mistakes
                     '''
                     SELECT 1
                     FROM mistakes
                     WHERE user_id = ? AND chapter = ? AND lesson = ?
                     LIMIT 1
                     ''',
-                    (progress.user_id, chapter, lesson_num)
+                    (progress.user_id, chapter, lesson_num) # Provide the user ID, chapter, and lesson number as parameters
                 )
-                mistake_exists = cursor.fetchone() is not None
-        except sqlite3.Error as e:
-            logging.error(f"Failed to retrieve mistakes from database: {e}")
+                mistake_exists = cursor.fetchone() is not None # Check if a mistake exists
+        except sqlite3.Error as e: # Catch any exceptions
+            print(f"Failed to retrieve mistakes from database: {e}") # Log the error
 
         # If the user made any mistakes in this lesson, add one extra question
-        if mistake_exists:
-            total_question_count = base_question_count + 1
-        else:
-            total_question_count = base_question_count
+        if mistake_exists: # Check if a mistake exists
+            total_question_count = base_question_count + 1 # Increment the question count
+        else: # If no mistakes exist
+            total_question_count = base_question_count # Use the base question count
 
-        lesson_question_counts[lesson_num] = total_question_count
+        lesson_question_counts[lesson_num] = total_question_count # Store the total question count for the lesson
 
     # Now, generate questions for each lesson
-    for lesson_num, question_count in lesson_question_counts.items():
-        # Retrieve the lesson content from the database
-        lesson_content = generate_lesson_content(progress, chapter, lesson_num)
+    for lesson_num, question_count in lesson_question_counts.items(): # Iterate over the lesson question counts
+    
+        lesson_content = generate_lesson_content(progress, chapter, lesson_num)  # Retrieve the lesson content from the database or generate it if not available
 
-        # Generate questions for this lesson
-        generated_questions = generate_questions_from_content(
-            chapter, lesson_num, lesson_content, question_count=question_count
+        generated_questions = generate_questions_from_content( # Generate questions based on the lesson content
+            chapter, lesson_num, lesson_content, question_count=question_count # Provide the chapter, lesson number, lesson content, and question count as parameters
         )
 
-        # Add the original_lesson metadata to each question
-        for question in generated_questions:
+        for question in generated_questions: # Iterate over the generated questions
             question['original_lesson'] = lesson_num  # Add original_lesson to question data
             
-        questions.extend(generated_questions)
+        questions.extend(generated_questions) # Extend the questions list with the generated questions
 
-    # Shuffle the questions
-    random.shuffle(questions)
-    return questions
+    random.shuffle(questions) # Shuffle the questions
+    return questions # Return the generated questions
 
-# Define the fill_missing_questions function
+# Function to fill in missing questions to meet the required count
 def fill_missing_questions(existing_questions, chapter, total_needed): # Define the fill_missing_questions function with the existing_questions, chapter, and total_needed parameters
-    """Fill in any missing questions to meet the required count.""" 
+    
     while len(existing_questions) < total_needed: # Loop until we have enough questions
         lesson = random.randint(1, 7) # Randomly select a lesson
         lesson_content = generate_lesson_content(chapter, lesson) # Generate the lesson content
@@ -628,16 +552,15 @@ def fill_missing_questions(existing_questions, chapter, total_needed): # Define 
         existing_questions.extend(new_question) # Extend the existing questions list
     return existing_questions # Return the existing questions
 
-# Define the generate_cumulative_review function
-def generate_cumulative_review(progress):
-    """Generate the cumulative review with 100 questions plus mistakes from chapter reviews."""
-    questions = []
+# Function to generate a cumulative review with 100 questions plus mistakes from chapter reviews
+def generate_cumulative_review(progress): # Define the generate_cumulative_review function with the progress parameter
+    questions = [] # Initialize an empty list to store the questions
 
     # Collect mistakes from chapter reviews (lessons where lesson = 8)
-    try:
-        with sqlite3.connect('progress.db') as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+    try: # Try block to handle exceptions
+        with sqlite3.connect('progress.db') as conn:  # Connect to the database
+            cursor = conn.cursor() # Create a cursor object
+            cursor.execute( # Execute a query to retrieve mistakes from chapter reviews
                 '''
                 SELECT chapter, original_lesson
                 FROM mistakes
@@ -645,52 +568,45 @@ def generate_cumulative_review(progress):
                 ''',
                 (progress.user_id,)
             )
-            mistakes = cursor.fetchall()
-    except sqlite3.Error as e:
-        logging.error(f"Failed to retrieve mistakes from database: {e}")
-        mistakes = []
-
+            mistakes = cursor.fetchall() # Fetch all the mistakes
+    except sqlite3.Error as e: # Catch any exceptions
+        mistakes = [] # Set mistakes to an empty list
+ 
     # For each mistake, generate a question based on the chapter and original lesson
-    for mistake in mistakes:
-        chapter, original_lesson = mistake
-        # Retrieve the lesson content from the database
-        lesson_content = generate_lesson_content(progress, chapter, original_lesson)
-        # Generate a question based on the lesson content
-        generated_questions = generate_questions_from_content(
-            chapter, original_lesson, lesson_content, question_count=1
+    for mistake in mistakes: # Iterate over the mistakes
+        chapter, original_lesson = mistake # Unpack the mistake
+        lesson_content = generate_lesson_content(progress, chapter, original_lesson) # Retrieve the lesson content from the database or generate it if not available
+        generated_questions = generate_questions_from_content( # Generate questions based on the lesson content
+            chapter, original_lesson, lesson_content, question_count=1 # Provide the chapter, original lesson, lesson content, and question count as parameters
         )
         # Add the question to the list
-        for question in generated_questions:
-            question['chapter'] = chapter
-            question['lesson'] = original_lesson
-            question['original_lesson'] = original_lesson
-        questions.extend(generated_questions)
+        for question in generated_questions: # Iterate over the generated questions
+            question['chapter'] = chapter # Add the chapter to the question data
+            question['lesson'] = original_lesson # Add the original lesson to the question data
+            question['original_lesson'] = original_lesson # Add the original lesson to the question data
+        questions.extend(generated_questions) # Extend the questions list with the generated questions
 
     # Now, generate random questions from all chapters until we reach 100 + number of mistakes
-    total_needed = 100 + len(mistakes)
-    while len(questions) < total_needed:
-        chapter = random.randint(1, 20)
-        lesson = random.randint(1, 7)
+    total_needed = 100 + len(mistakes) # Calculate the total number of questions needed
+    while len(questions) < total_needed: # Loop until we have enough questions
+        chapter = random.randint(1, 20) # Randomly select a chapter
+        lesson = random.randint(1, 7) # Randomly select a lesson
         # Retrieve the lesson content
-        lesson_content = generate_lesson_content(progress, chapter, lesson)
-        generated_questions = generate_questions_from_content(
-            chapter, lesson, lesson_content, question_count=1
+        lesson_content = generate_lesson_content(progress, chapter, lesson) # Generate the lesson content
+        generated_questions = generate_questions_from_content( # Generate questions based on the lesson content
+            chapter, lesson, lesson_content, question_count=1 # Provide the chapter, lesson, lesson content, and question count as parameters
         )
-        for question in generated_questions:
-            question['chapter'] = chapter
-            question['lesson'] = lesson
-        questions.extend(generated_questions)
+        for question in generated_questions: # Iterate over the generated questions
+            question['chapter'] = chapter # Add the chapter to the question data
+            question['lesson'] = lesson # Add the lesson to the question data
+        questions.extend(generated_questions) # Extend the questions list with the generated questions
 
-    random.shuffle(questions)
-    return questions[:total_needed]
+    random.shuffle(questions) # Shuffle the questions
+    return questions[:total_needed] # Return the first 100 + number of mistakes questions
 
-
-# Define the generate_questions_from_content function
+# Function to validate answers using GPT-3 for coding challenges and scenario-based questions
 def validate_answer_with_gpt(question_data, user_response=None, user_code=None, user_output=None): # Define the validate_answer_with_gpt function with the question_data, user_response, user_code, and user_output parameters
-    """Use GPT to validate both coding challenges and scenario-based answers."""
     try: # Try block to handle exceptions 
-        logging.debug("Sending validation request to GPT.") # Log the validation request
-
         # Ensure question_data is valid
         if not isinstance(question_data, dict): # Check if the question_data is not a dictionary
             raise ValueError("question_data must be a dictionary.") # Raise a ValueError
@@ -730,23 +646,16 @@ def validate_answer_with_gpt(question_data, user_response=None, user_code=None, 
         )
 
         gpt_response = response.choices[0].message.content.strip() # Extract the content from the API response
-        logging.info(f"GPT Validation Response: {gpt_response}") # Log the GPT validation response
-
         # Prioritize "Incorrect" over "Correct" to avoid misinterpretation
         if "incorrect" in gpt_response.lower(): # Check if the response contains 'incorrect'
-            logging.info("Validation marked as Incorrect.") # Log the validation as incorrect
             return False, gpt_response  # Invalid response
         elif "correct" in gpt_response.lower():     # Check if the response contains 'correct'
-            logging.info("Validation marked as Correct.") # Log the validation as correct
             return True, gpt_response  # Valid response
         else: # If neither 'correct' nor 'incorrect' is found
-            logging.warning("Unexpected GPT response format.") # Log a warning message
             return False, "Unexpected response from GPT. Please review the feedback." # Return an unexpected response message
 
     except ValueError as ve: # Catch ValueError exceptions
-        logging.error(f"ValueError: {ve}") # Log the ValueError
         return False, str(ve)   # Return False and the error message
 
     except Exception as e:  # Catch any exceptions
-        logging.error(f"Error during GPT validation: {e}") # Log the error
         return False, "An error occurred during validation." # Return False and an error message
