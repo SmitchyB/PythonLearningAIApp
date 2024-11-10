@@ -7,6 +7,18 @@ from fuzzywuzzy import fuzz # Import the fuzz function from fuzzywuzzy to compar
 import subprocess # Import the subprocess module to run the user's code
 import sys # Import the sys module to access system-specific parameters and functions
 import random # Import the random module to generate random numbers
+from kivy.app import App
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.lang import Builder
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.graphics import Color, Ellipse, Triangle
+from kivy.uix.widget import Widget
+from kivy.config import Config
+from kivy.metrics import dp
+
+Config.set('graphics', 'width', '360')  # Example width for a phone screen
+Config.set('graphics', 'height', '640')  # Example height for a phone screen
 
 #Run the user's code and capture output or errors
 def run_user_code(code): # Define the run_user_code function
@@ -22,45 +34,6 @@ def run_user_code(code): # Define the run_user_code function
 
 # Initialize colorama to reset color after each print
 init(autoreset=True) # Initialize colorama
-
-# Registers new users
-def register_user(): # Define the register_user function
-    name = input("Enter your name: ").strip() # Get the user's name
-    email = input("Enter your email: ").strip() # Get the user's email
-    password = input("Enter your password: ").strip() # Get the user's password
-
-    hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()) # Hash the user's password
-
-    try: # Try to insert the user into the database
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            cursor.execute( # Execute an SQL query
-                'INSERT INTO users (name, email, password) VALUES (?, ?, ?)', # Insert the user's name, email, and password
-                (name, email, hashed_password) # Pass the user's name, email, and hashed password as parameters
-            )
-            conn.commit() # Commit the transaction
-    except sqlite3.IntegrityError: # Handle duplicate email errors
-        print(Fore.RED + "Error: A user with that email already exists.") # Print an error message
-
-# Logs in existing users
-def login_user(): # Define the login_user function
-    email = input("Enter your email: ").strip() # Get the user's email
-    password = input("Enter your password: ").strip() # Get the user's password
-
-    try: # Try to retrieve the user from the database
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object 
-            cursor.execute('SELECT * FROM users WHERE email = ?', (email,)) # Execute an SQL query
-            user = cursor.fetchone() # Fetch the first row from the result set
-
-        if user and user[3] and bcrypt.checkpw(password.encode(), user[3]): # Check if the user exists and the password is correct
-            print(Fore.GREEN + f"Welcome, {user[1]}!") # Print a welcome message
-            return user # Return the user
-        else: # Handle invalid email or password
-            print(Fore.RED + "Invalid email or password.") # Print an error message
-    except sqlite3.Error as e: # Handle database errors
-        print(Fore.RED + f"Database error: {e}") # Print an error message
-    return None # Return None if the login fails
 
 # Track user progress and score
 class UserProgress: # Define the UserProgress class
@@ -78,7 +51,7 @@ class UserProgress: # Define the UserProgress class
                 cursor = conn.cursor() # Create a cursor object
                 cursor.execute( # Execute an SQL query
                     '''
-                    INSERT INTO mistakes (user_id, chapter, lesson, question, user_answer, correct_answer, feedback, user_code, user_output, user_errors, original_lesson
+                    INSERT INTO mistakes (user_id, chapter, lesson, question, user_answer, correct_answer, feedback, user_code, user_output, user_errors, original_lesson)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''',
                     (self.user_id, chapter, lesson, question, user_answer, correct_answer, feedback, user_code, user_output, user_errors, original_lesson) # Pass the parameters
@@ -182,58 +155,6 @@ class UserProgress: # Define the UserProgress class
 # Helper function to calculate the percentage score
 def calculate_percentage_score(correct, total): # Define the calculate_percentage_score function
     return (correct / total) * 100 if total > 0 else 0 # Calculate the percentage score
-
-#Function to select a lesson within a chapter
-def select_lesson(progress, chapter): # Define the select_lesson function
-    while True: # Loop to select a lesson
-        print(f"\nSelect a Lesson for Chapter {chapter}:") # Print the lesson selection prompt
-        
-        total_lessons_in_chapter = len(chapters[chapter]['lessons']) - 1  # Subtract 1 for the review test
-
-        # Determine which lessons are unlocked
-        if chapter == progress.chapter: # User is in the current chapter
-            if progress.lesson > total_lessons_in_chapter: # User has completed all lessons, include the chapter review test
-                unlocked_lessons = range(1, total_lessons_in_chapter + 2) # Include the review test
-            else: # User is in the middle of the chapter
-                unlocked_lessons = range(1, progress.lesson + 1) # Include the current lesson
-        else: # User is in a future chapter
-            unlocked_lessons = [1] # Only the first lesson is unlocked
-
-        # Display unlocked lessons
-        for lesson in unlocked_lessons: # Iterate over the unlocked lessons
-            if lesson <= total_lessons_in_chapter: # Check if the lesson is not the review test
-                print(f"{lesson}) {chapters[chapter]['lessons'][lesson]['title']}") # Print the lesson number and title
-            else: # Handle the review test
-                print(f"{lesson}) Review Test: {chapters[chapter]['title']}") # Print the review test
-
-        lesson_choice = input("Enter the lesson number (or 'B' to go back): ").strip() # Get the user's lesson choice
-
-        if lesson_choice.lower() == 'b': # Check if the user selected to go back
-            return  # Go back to chapter selection
-
-        if not lesson_choice.isdigit() or int(lesson_choice) not in unlocked_lessons: # Check if the user's lesson choice is invalid
-            print(Fore.RED + "Invalid lesson number.") # Print an error message
-            continue # Continue to the next iteration
-
-        lesson = int(lesson_choice) # Convert the lesson choice to an integer
-
-        if lesson <= total_lessons_in_chapter: # Check if the lesson is not the review test
-            print(Fore.GREEN + "Retrieving lesson content...") # Print a message to retrieve the lesson content
-            lesson_content = generate_lesson_content(progress, chapter, lesson) # Generate the lesson content
-            play_lesson(progress, chapter, lesson, lesson_content) # Play the lesson
-        else: # Handle the review test
-            if progress.lesson > total_lessons_in_chapter: # Check if the user has completed all lessons
-                passed = review_test(progress) # Conduct the review test
-                if passed: # Check if the user passed the review test
-                    progress.chapter += 1 # Advance to the next chapter
-                    progress.lesson = 1 # Reset the lesson to 1
-                    progress.save_progress() # Save the progress
-                    print(Fore.GREEN + "You have advanced to the next chapter!") # Print a success message
-                    return  # Go back to chapter selection
-                else: # Handle failing the review test
-                    print(Fore.RED + "Please review the lessons and try again.") # Print an error message
-            else: # Handle attempting the review test before completing all lessons
-                print(Fore.RED + "You need to complete all lessons before taking the review test.") # Print an error message
 
 # Function to generate the lesson content, questions and track user progress
 def play_lesson(progress, chapter, lesson, lesson_content): # Define the play_lesson function
@@ -541,516 +462,230 @@ def play_game(progress): # Define the play_game function
 
         #if the user's chapter choice is valid select the lesson
         chapter = int(chapter_choice) # Convert the chapter choice to an integer
-        select_lesson(progress, chapter) # Select the lesson
 
-#Function to welcome users  
-def welcome(): # Define the welcome function
-    while True: # Loop to display the welcome screen
-        print("\n--- Welcome ---") # Print the welcome message
-        print("1) Log In") # Print the log in option
-        print("2) Register") # Print the register option
-        print("4) Exit") # Print the exit option
+class LoginScreen(Screen):
+    def authenticate_or_register(self, name=None, email=None, password=None):
+        if self.ids.main_button.text == "Login":
+            # Call existing login logic
+            user = self.login_user(email, password)
+            if user:
+                # Navigate to the main screen if login is successful
+                self.manager.current = "main"
+        else:
+            # Call existing registration logic
+            self.register_user(name, email, password)
 
-        choice = input("Select an option (1-4): ").strip() # Get the user's choice
+    def toggle_form(self):
+        if self.ids.main_button.text == "Login":
+            # Switch to registration form
+            self.ids.form_label.text = "Register"
+            self.ids.main_button.text = "Register"
+            self.ids.switch_text.text = "[color=0000FF][ref=toggle]Already Registered? Login Here[/ref][/color]"
+        else:
+            # Switch to login form
+            self.ids.form_label.text = "Login"
+            self.ids.main_button.text = "Login"
+            self.ids.switch_text.text = "[color=0000FF][ref=toggle]Not Registered? Register Here[/ref][/color]"
 
-        #if the user selects '1' log them in
-        if choice == '1': # Check if the user selected log in
-            user = login_user() # Log in the user
-            if user: # Check if the user is valid
-                progress = UserProgress(user[0])  # Restore progress 
-                progress.chapter = user[4]  # Restore chapter
-                progress.lesson = user[5] # Restore lesson
-                main_menu(progress)  # Go to the post-login menu
+    def login_user(self, email, password):
+        try:
+            with sqlite3.connect('progress.db') as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+                user = cursor.fetchone()
+            if user and user[3] and bcrypt.checkpw(password.encode(), user[3].encode() if isinstance(user[3], str) else user[3]):
+                print(f"Welcome, {user[1]}!")  # Replace with a Kivy label/message if needed
+                # Pass user_id to MainScreen
+                main_screen = self.manager.get_screen('main')
+                main_screen.user_id = user[0]  # Assuming user[0] is the user_id
+                return user
+            else:
+                self.ids.message_label.text = "Invalid email or password."  # Update Kivy label
+        except sqlite3.Error as e:
+            self.ids.message_label.text = f"Database error: {e}"
+        return None
 
-        #if the user selects '2' register them
-        elif choice == '2': # Check if the user selected register
-            register_user() # Register the user
-            print(Fore.GREEN + "\nRegistration complete! Please log in.") # Print a success message
+    def register_user(self, name, email, password):
+        hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+        try:
+            with sqlite3.connect('progress.db') as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+                    (name, email, hashed_password)
+                )
+                conn.commit()
+                self.ids.message_label.text = "Registration successful! Please login."
+        except sqlite3.IntegrityError:
+            self.ids.message_label.text = "Error: A user with that email already exists."
+
+class MainScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.user_id = None  # Initialize user_id
+    def get_chapters(self):
+        return chapters  # Returns the chapters dictionary imported from config.py
+
+    def on_enter(self):
+        self.populate_roadmap()
+
+    def populate_roadmap(self):
+        if not self.user_id:
+            print("Error: user_id is not set.")
+            return  # Exit the function or handle the error as needed
+
+        roadmap_layout = self.ids.roadmap_layout
+        roadmap_layout.clear_widgets()  # Clear previous widgets if any
+
+        chapters = self.get_chapters()  # Replace with your method to fetch chapters
+        user_progress = UserProgress(user_id=self.user_id)  # Replace with appropriate user progress instance
+        unlocked_chapters = user_progress.chapter  # Assuming progress.chapter gives the current unlocked chapter
+
+        for chapter_num, chapter_data in chapters.items():
+            if chapter_num > unlocked_chapters:
+                continue  # Skip locked chapters
+
+            chapter_title = chapter_data['title']
             
-        #if the user selects '4' exit the program
-        elif choice == '4': # Check if the user selected to exit
-            print(Fore.GREEN + "Goodbye!") # Print a goodbye message
-            break # Exit the loop
-
-        #if the user's choice is invalid print an error message
-        else: # Handle invalid choices
-            print(Fore.RED + "Invalid choice. Please select 1, 2, 3, or 4.") # Print an error message
-
-#Function to display the main menu
-def main_menu(progress): # Define the main_menu function
-    while True: # Loop to display the main menu
-        print("\n--- Main Menu ---") # Print the main menu options
-        print("1) Play") # Print the play option
-        print("2) Show Mistakes") # Print the show mistakes option
-        print("3) Display Lesson Content")  # New option added
-        print("4) Exit") # Print the exit option
-        print("5) Testing Mode")  # If you have testing mode as option 5
-
-        choice = input("Select an option (1-5): ").strip() # Get the user's choice
-
-        if choice == '1': # Check if the user selected play
-            play_game(progress) # Play the game
-        elif choice == '2': # Check if the user selected show mistakes
-            show_mistakes_menu(progress) # Show the user's mistakes
-        elif choice == '3': # Check if the user selected the new option
-            display_lesson_content_menu(progress)  # Display the lesson content
-        elif choice == '4': # Check if the user selected exit
-            print(Fore.GREEN + "Goodbye!") # Print a goodbye message
-            break # Exit the loop
-        elif choice == '5': # Check if the user selected testing mode
-            testing_mode(progress) # Enter testing mode
-        else: # Handle invalid choices
-            print(Fore.RED + "Invalid choice. Please select 1-5.") # Print an error message
-
-#Function to display the lesson content
-def display_lesson_content_menu(progress): # Define the display_lesson_content_menu function
-    try: # Try to retrieve the lesson content from the database
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            cursor.execute( # Execute an SQL query
-                '''
-                SELECT DISTINCT chapter, lesson
-                FROM lesson_content
-                WHERE user_id = ?
-                ORDER BY chapter, lesson
-                ''',
-                (progress.user_id,) # Pass the user ID as a parameter
+            # Main container for chapter and lesson with vertical centering
+            chapter_and_lesson_container = BoxLayout(
+                orientation='horizontal',
+                spacing=10,
+                size_hint=(None, None),
+                height=60,
+                width=300,
+                pos_hint={"center_y": 0.5}  # This helps with centering within the parent layout
             )
-            lessons = cursor.fetchall() # Fetch all the lessons
-        if not lessons: # Check if there are no lessons
-            print(Fore.YELLOW + "No lesson content available in the database.") # Print a message
-            return # Return if there is no lesson content
-        # Build a nested dictionary of chapters and lessons
-        content_dict = {} # Initialize the content dictionary
-        for chapter, lesson in lessons: # Iterate over the lessons
-            content_dict.setdefault(chapter, []).append(lesson) # Add the lesson to the chapter
-        while True: # Loop to select a chapter and lesson
-            print("\nSelect a Chapter (or 'B' to go back):") # Print the chapter selection prompt
-            for chapter in sorted(content_dict.keys()): # Iterate over the chapters
-                chapter_title = chapters.get(chapter, {}).get('title', f"Chapter {chapter}") # Get the chapter title
-                print(f"{chapter}) {chapter_title}") # Print the chapter number and title
-            chapter_choice = input("Enter chapter number: ").strip() # Get the user's chapter choice
-            if chapter_choice.lower() == 'b': # Check if the user selected to go back
-                return # Go back to the main menu
-            if not chapter_choice.isdigit() or int(chapter_choice) not in content_dict: # Check if the user's chapter choice is invalid
-                print(Fore.RED + "Invalid chapter number.") # Print an error message
-                continue # Continue to the next iteration
-            chapter = int(chapter_choice) # Convert the chapter choice to an integer
-            lessons_in_chapter = content_dict[chapter] # Get the lessons in the selected chapter
-            while True: # Loop to select a lesson
-                print(f"\nSelect a Lesson in Chapter {chapter} (or 'B' to go back):") # Print the lesson selection prompt
-                for lesson in sorted(lessons_in_chapter): # Iterate over the lessons in the chapter
-                    lesson_title = chapters.get(chapter, {}).get('lessons', {}).get(lesson, {}).get('title', f"Lesson {lesson}") # Get the lesson title
-                    print(f"{lesson}) {lesson_title}") # Print the lesson number and title
-                lesson_choice = input("Enter lesson number: ").strip() # Get the user's lesson choice
-                if lesson_choice.lower() == 'b': # Check if the user selected to go back
-                    break # Go back to chapter selection
-                if not lesson_choice.isdigit() or int(lesson_choice) not in lessons_in_chapter: # Check if the user's lesson choice is invalid
-                    print(Fore.RED + "Invalid lesson number.") # Print an error message
-                    continue # Continue to the next iteration
-                lesson = int(lesson_choice) # Convert the lesson choice to an integer
-                # Fetch and display the lesson content
-                with sqlite3.connect('progress.db') as conn: # Connect to the database
-                    cursor = conn.cursor() # Create a cursor object
-                    cursor.execute( # Execute an SQL query
-                        '''
-                        SELECT content
-                        FROM lesson_content
-                        WHERE user_id = ? AND chapter = ? AND lesson = ?
-                        ''',
-                        (progress.user_id, chapter, lesson) # Pass the user ID, chapter, and lesson as parameters
-                    )
-                    row = cursor.fetchone() # Fetch the lesson content
-                    if row: # Check if the lesson content is found
-                        content = row[0] # Get the lesson content
-                        chapter_title = chapters.get(chapter, {}).get('title', f"Chapter {chapter}") # Get the chapter title
-                        lesson_title = chapters.get(chapter, {}).get('lessons', {}).get(lesson, {}).get('title', f"Lesson {lesson}") # Get the lesson title
-                        print(Fore.CYAN + f"\n--- {chapter_title} ---") # Print the chapter title
-                        print(Fore.CYAN + f"--- Lesson {lesson}: {lesson_title} ---") # Print the lesson title
-                        print(Fore.YELLOW + "\nLesson Content:\n") # Print the lesson content header
-                        print(content) # Print the lesson content
-                    else: # Handle lesson content not found
-                        print(Fore.RED + "Lesson content not found.") # Print an error message
-                input("\nPress Enter to continue...") # Wait for user input
-                break  # After displaying content, go back to lesson selection
-    except sqlite3.Error as e: # Handle database errors
-        print(Fore.RED + f"Database error: {e}") # Print an error message
-
-#Display the user's mistakes
-def show_mistakes_menu(progress): # Define the show_mistakes_menu function
-    progress.show_mistakes() # Show the user's mistakes
-
-#Function to enter testing mode
-def testing_mode(progress): # Define the testing_mode function
-    while True: # Loop to display the testing mode menu
-        print("\n--- Testing Mode ---") # Print the testing mode options
-        print("1) Generate Lesson Content") # Print the generate lesson content option
-        print("2) Generate Questions from Lesson Content") # Print the generate questions option
-        print("3) Generate Mistake Data for Lessons") # Print the generate mistake data option
-        print("4) Generate Chapter Review") # Print the generate chapter review option
-        print("5) Generate Cumulative Review") # Print the generate cumulative review option
-        print("6) Generate All Lesson Content and Mistake Data") # Print the generate all lesson content and mistake data option
-        print("7) Go Back to Main Menu") # Print the go back option
-
-        choice = input("Select an option (1-7): ").strip() # Get the user's choice
-
-        if choice == '1': # Check if the user selected generate lesson content
-            generate_lesson_content_testing(progress) # Generate lesson content for selected chapter and lesson
-        elif choice == '2': # Check if the user selected generate questions
-            generate_questions_testing(progress) # Generate questions from lesson content by question type
-        elif choice == '3': # Check if the user selected generate mistake data
-            generate_mistake_data_testing(progress) # Generate mistake data for lessons
-        elif choice == '4': # Check if the user selected generate chapter review
-            generate_chapter_review_testing(progress) # Generate chapter review
-        elif choice == '5': # Check if the user selected generate cumulative review
-            cumulative_review_test(progress) # Generate cumulative review
-        elif choice == '6': # Check if the user selected generate all lesson content and mistake data
-            generate_all_lesson_content_and_mistakes(progress) # Generate all lesson content and mistake data
-        elif choice == '7': # Check if the user selected go back
-            return  # Go back to the main menu
-        else: # Handle invalid choices
-            print(Fore.RED + "Invalid choice. Please select 1-7.") # Print an error message
-
-#Function to generate lesson content for testing mode
-def generate_lesson_content_testing(progress): # Define the generate_lesson_content_testing function
-    while True: # Loop to select a chapter and lesson
-        print("\nSelect a Chapter (or 'B' to go back):") # Print the chapter selection prompt
-        for chapter_num, chapter_info in chapters.items(): # Iterate over the chapters
-            print(f"{chapter_num}) {chapter_info['title']}") # Print the chapter number and title
-
-        chapter_choice = input("Enter chapter number: ").strip() # Get the user's chapter choice
-        if chapter_choice.lower() == 'b': # Check if the user selected to go back
-            return # Go back to the testing mode menu
-
-        if not chapter_choice.isdigit() or int(chapter_choice) not in chapters: # Check if the user's chapter choice is invalid
-            print(Fore.RED + "Invalid chapter number.") # Print an error message
-            continue # Continue to the next iteration
-
-        chapter = int(chapter_choice) # Convert the chapter choice to an integer
-
-        print(f"\nSelect a Lesson in Chapter {chapter} (excluding lesson 8) (or 'B' to go back):") # Print the lesson selection prompt
-        lessons = chapters[chapter]['lessons'] # Get the lessons in the selected chapter
-        for lesson_num, lesson_info in lessons.items(): # Iterate over the lessons
-            if lesson_num == 8: # Exclude lesson 8
-                continue
-            print(f"{lesson_num}) {lesson_info['title']}") # Print the lesson number and title
-
-        lesson_choice = input("Enter lesson number: ").strip() # Get the user's lesson choice
-        if lesson_choice.lower() == 'b': # Check if the user selected to go back
-            continue # Continue to the next iteration
-
-        if not lesson_choice.isdigit() or int(lesson_choice) not in lessons or int(lesson_choice) == 8: # Check if the user's lesson choice is invalid
-            print(Fore.RED + "Invalid lesson number.") # Print an error message
-            continue # Continue to the next iteration
-
-        lesson = int(lesson_choice) # Convert the lesson choice to an integer
-
-        # Generate lesson content
-        print(Fore.GREEN + f"Generating lesson content for Chapter {chapter}, Lesson {lesson}...") # Print a success message
-        lesson_content = generate_lesson_content(progress, chapter, lesson) # Generate lesson content
-        print(Fore.GREEN + "Lesson content generated and saved to database.") # Print a success message
-
-        # Ask if the user wants to generate another lesson content
-        another = input("Generate content for another lesson? (Y/N): ").strip().lower() # Get the user's choice
-        if another != 'y': # Check if the user selected not to generate another lesson content
-            break
-
-#Function to generate questions for testing mode
-def generate_questions_testing(progress): # Define the generate_questions_testing function
-    question_types = ['multiple_choice', 'true_false', 'fill_in_the_blank', 'scenario', 'write_code'] # Add the new question type
-    while True: # Loop to select a question type, chapter, and lesson
-        print("\nSelect a Question Type (or 'B' to go back):") # Print the question type selection prompt
-        for idx, q_type in enumerate(question_types, 1): # Iterate over the question types
-            print(f"{idx}) {q_type}") # Print the question type
-
-        qtype_choice = input("Enter question type number: ").strip() # Get the user's question type choice
-        if qtype_choice.lower() == 'b': # Check if the user selected to go back
-            return # Go back to the testing mode menu
-
-        if not qtype_choice.isdigit() or int(qtype_choice) < 1 or int(qtype_choice) > len(question_types): # Check if the user's question type choice is invalid
-            print(Fore.RED + "Invalid choice.") # Print an error message
-            continue # Continue to the next iteration
-
-        question_type = question_types[int(qtype_choice) - 1] # Get the selected question type
-
-        # Select chapter and lesson
-        print("\nSelect a Chapter (or 'B' to go back):") # Print the chapter selection prompt
-        for chapter_num, chapter_info in chapters.items(): # Iterate over the chapters
-            print(f"{chapter_num}) {chapter_info['title']}") # Print the chapter number and title
-
-        chapter_choice = input("Enter chapter number: ").strip() # Get the user's chapter choice
-        if chapter_choice.lower() == 'b': # Check if the user selected to go back
-            continue
-
-        if not chapter_choice.isdigit() or int(chapter_choice) not in chapters: # Check if the user's chapter choice is invalid
-            print(Fore.RED + "Invalid chapter number.") # Print an error message
-            continue
-
-        chapter = int(chapter_choice) # Convert the chapter choice to an integer
-
-        print(f"\nSelect a Lesson in Chapter {chapter} (excluding lesson 8) (or 'B' to go back):") # Print the lesson selection prompt 
-        lessons = chapters[chapter]['lessons'] # Get the lessons in the selected chapter
-        for lesson_num, lesson_info in lessons.items(): # Iterate over the lessons
-            if lesson_num == 8: # Exclude lesson 8
-                continue
-            print(f"{lesson_num}) {lesson_info['title']}") # Print the lesson number and title
-
-        lesson_choice = input("Enter lesson number: ").strip() # Get the user's lesson choice
-        if lesson_choice.lower() == 'b': # Check if the user selected to go back
-            continue
-
-        if not lesson_choice.isdigit() or int(lesson_choice) not in lessons or int(lesson_choice) == 8: # Check if the user's lesson choice is invalid
-            print(Fore.RED + "Invalid lesson number.") # Print an error message
-            continue
-
-        lesson = int(lesson_choice) # Convert the lesson choice to an integer
-
-        # Check if lesson content is available
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            cursor.execute( # Execute an SQL query
-                '''
-                SELECT content
-                FROM lesson_content
-                WHERE user_id = ? AND chapter = ? AND lesson = ?
-                ''',
-                (progress.user_id, chapter, lesson) # Pass the user ID, chapter, and lesson as parameters
+            chapter_and_lesson_container.add_widget(Widget())  # Spacer for centering
+            
+            # Chapter widget container
+            chapter_box = BoxLayout(
+                orientation='vertical',
+                size_hint=(None, None),
+                width=150,
+                height=60,
+                pos_hint={"center_y": 0.5}  # Ensure centered positioning
             )
-            row = cursor.fetchone() # Fetch the lesson content
-            if not row: # Check if the lesson content is not found
-                print(Fore.RED + "Lesson content not found. Generate lesson content first.") # Print an error message
-                continue # Continue to the next iteration
-            lesson_content = row[0] # Get the lesson content
+            chapter_label = Button(
+                text=f"Chapter {chapter_num}\n{chapter_title}",
+                size_hint=(None, None),
+                width=150,
+                height=50,
+                background_normal='',
+                background_color=(0.3, 0.3, 0.3, 1),
+            )
+            chapter_box.add_widget(chapter_label)
+            chapter_and_lesson_container.add_widget(chapter_box)
 
-        # Generate question of the selected type
-        print(Fore.GREEN + f"Generating {question_type} question for Chapter {chapter}, Lesson {lesson}...") # Print a success message
-        # Modify the function to generate questions of a specific type
-        questions = generate_questions_from_content( # Generate questions from lesson content
-            chapter, lesson, lesson_content, question_count=1, allowed_types=[question_type] # Pass the chapter, lesson, lesson content, question count, and allowed types
-        )
-        if questions: # Check if questions are generated
-            question_data = questions[0] # Get the first question
-            print(Fore.GREEN + f"Question generated:\n{question_data['question']}") # Print the generated question
-        else: # Handle failed question generation
-            print(Fore.RED + "Failed to generate question.") # Print an error message
-
-        another = input("Generate another question? (Y/N): ").strip().lower() # Get the user's choice
-        if another != 'y': # Check if the user selected not to generate another question
-            break
-
-def generate_mistake_data_testing(progress): # Define the generate_mistake_data_testing function
-    """Generate mistake data for lessons."""
-    while True: # Loop to select a chapter and lesson
-        print("\nSelect a Chapter (or 'B' to go back):") # Print the chapter selection prompt
-        for chapter_num, chapter_info in chapters.items(): # Iterate over the chapters
-            print(f"{chapter_num}) {chapter_info['title']}") # Print the chapter number and title
-
-        chapter_choice = input("Enter chapter number: ").strip() # Get the user's chapter choice
-        if chapter_choice.lower() == 'b': # Check if the user selected to go back
-            return # Go back to the testing mode menu
-
-        if not chapter_choice.isdigit() or int(chapter_choice) not in chapters: # Check if the user's chapter choice is invalid
-            print(Fore.RED + "Invalid chapter number.") # Print an error message
-            continue # Continue to the next iteration
-
-        chapter = int(chapter_choice) # Convert the chapter choice to an integer
-
-        print(f"\nSelect a Lesson in Chapter {chapter} (or 'B' to go back):") # Print the lesson selection prompt
-        lessons = chapters[chapter]['lessons'] # Get the lessons in the selected chapter
-        for lesson_num, lesson_info in lessons.items(): # Iterate over the lessons
-            print(f"{lesson_num}) {lesson_info['title']}") # Print the lesson number and title
-
-        lesson_choice = input("Enter lesson number: ").strip() # Get the user's lesson choice
-        if lesson_choice.lower() == 'b': # Check if the user selected to go back
-            continue
-
-        if not lesson_choice.isdigit() or int(lesson_choice) not in lessons: # Check if the user's lesson choice is invalid
-            print(Fore.RED + "Invalid lesson number.") # Print an error message
-            continue
-
-        lesson = int(lesson_choice) # Convert the lesson choice to an integer
-
-        # Determine the original_lesson
-        if lesson == 8: # Check if the lesson is a review lesson
-            original_lesson = random.randint(1, 7) # Generate a random lesson number
-        else: # Handle non-review lessons
-            original_lesson = lesson # Set the original lesson to the selected lesson
-
-        # Create a sample mistake entry
-        question_text = f"Sample question for Chapter {chapter}, Lesson {lesson}" # Generate a sample question text
-        user_answer = "Incorrect answer" # Generate a sample user answer
-        correct_answer = "Correct answer" # Generate a sample correct answer
-
-        # Save the mistake to the database
-        try: # Try to save the mistake to the database
-            with sqlite3.connect('progress.db') as conn: # Connect to the database
-                cursor = conn.cursor() # Create a cursor object
-                cursor.execute( # Execute an SQL query
-                    '''
-                    INSERT INTO mistakes (user_id, chapter, lesson, question, user_answer, correct_answer, original_lesson)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''',
-                    (progress.user_id, chapter, lesson, question_text, user_answer, correct_answer, original_lesson) # Pass the mistake data as parameters
+            # Lesson widget container
+            lesson_box = BoxLayout(
+                orientation='vertical',
+                size_hint=(None, None),
+                width=40,
+                height=60
+            )
+            lesson_num = 1  # Show only the first unlocked lesson for now
+            lesson_data = chapter_data['lessons'].get(lesson_num)
+            if lesson_data:
+                lesson_button = Button(
+                    text=f"{lesson_num}\n{lesson_data['title']}",
+                    size_hint=(None, None),
+                    width=40,
+                    height=40,
+                    background_normal='',
+                    background_color=(0.6, 0.6, 0.6, 1),  # Gray circle
+                    on_press=lambda btn, ch=chapter_num, ln=lesson_num: self.load_lesson_screen(ch, ln)  # Call a method to load lesson
                 )
-                conn.commit() # Commit the transaction
-                print(Fore.GREEN + "Mistake data generated and saved.") # Print a success message
-        except sqlite3.Error as e: # Handle database errors
-            print(Fore.RED + f"Failed to save mistake: {e}") # Print an error message
+                lesson_box.add_widget(Widget())  # Spacer for vertical centering
+                lesson_box.add_widget(lesson_button)
+                lesson_box.add_widget(Widget())  # Spacer for vertical centering
+                chapter_and_lesson_container.add_widget(lesson_box)
 
-        another = input("Generate mistake for another lesson? (Y/N): ").strip().lower() # Get the user's choice
-        if another != 'y': # Check if the user selected not to generate another mistake
-            break
+            chapter_and_lesson_container.add_widget(Widget())  # Spacer for centering
 
-#Function to generate chapter review for testing mode
-def generate_chapter_review_testing(progress): # Define the generate_chapter_review_testing function
-    while True: # Loop to select a chapter
-        print("\nSelect a Chapter to generate review (or 'B' to go back):") # Print the chapter selection prompt
-        for chapter_num, chapter_info in chapters.items(): # Iterate over the chapters
-            print(f"{chapter_num}) {chapter_info['title']}") # Print the chapter number and title
- 
-        chapter_choice = input("Enter chapter number: ").strip() # Get the user's chapter choice
-        if chapter_choice.lower() == 'b': # Check if the user selected to go back
-            return 
+            # Add the chapter_and_lesson_container to the roadmap layout
+            roadmap_layout.add_widget(chapter_and_lesson_container)
+    def load_lesson_screen(self, chapter, lesson):
+        # Navigate to the lesson screen and load the lesson
+        lesson_screen = self.manager.get_screen('lesson')  # Get the lesson screen instance
+        lesson_screen.load_lesson(self.user_id, chapter, lesson)  # Pass necessary data to load the lesson
+        self.manager.current = 'lesson'  # Switch to the lesson screen
 
-        if not chapter_choice.isdigit() or int(chapter_choice) not in chapters: # Check if the user's chapter choice is invalid
-            print(Fore.RED + "Invalid chapter number.") # Print an error message
-            continue
+class LessonScreen(Screen):
+    lesson_parts = []  # Default value for lesson_parts
+    current_part = 0   # Default value for current_part
 
-        chapter = int(chapter_choice) # Convert the chapter choice to an integer
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.lesson_parts = []  # Initialize an empty list for lesson parts
+        self.current_part = 0  # Initialize current part index
 
-        # Check if lesson content for all lessons is available
-        lessons = chapters[chapter]['lessons'] # Get the lessons in the selected chapter
-        missing_content = False # Initialize the missing content flag
-        for lesson_num in lessons: # Iterate over the lessons
-            if lesson_num == 8: # Skip review lesson
-                continue
-            with sqlite3.connect('progress.db') as conn: # Connect to the database
-                cursor = conn.cursor() # Create a cursor object
-                cursor.execute( # Execute an SQL query
-                    '''
-                    SELECT content
-                    FROM lesson_content
-                    WHERE user_id = ? AND chapter = ? AND lesson = ?
-                    ''',
-                    (progress.user_id, chapter, lesson_num) # Pass the user ID, chapter, and lesson as parameters
-                )
-                row = cursor.fetchone() # Fetch the lesson content
-                if not row: # Check if the lesson content is not found
-                    print(Fore.RED + f"Lesson content missing for Chapter {chapter}, Lesson {lesson_num}. Cannot generate review.") # Print an error message
-                    missing_content = True # Set the missing content flag
-                    break
-        if missing_content: # Check if lesson content is missing
-            continue # Continue to the next iteration
+    def load_lesson(self, user_id, chapter, lesson):
+        print(f"Loading lesson for User ID: {user_id}, Chapter: {chapter}, Lesson: {lesson}")
+        progress = UserProgress(user_id=user_id)
+        lesson_content = generate_lesson_content(progress, chapter, lesson)
+        print(f"Generated Lesson Content:\n{lesson_content}")  # Inspect the raw content
 
-        # Generate the chapter review
-        print(Fore.GREEN + f"Generating chapter review for Chapter {chapter}...") # Print a success message
-        questions = generate_review_questions(progress, chapter) # Generate review questions for the chapter
-        print(Fore.GREEN + f"Chapter review generated with {len(questions)} questions.") # Print the number of questions generated
- 
-        another = input("Generate review for another chapter? (Y/N): ").strip().lower() # Get the user's choice
-        if another != 'y': # Check if the user selected not to generate another review
-            break
+        self.lesson_parts = [part.strip() for part in lesson_content.split("\n\n") if part.strip()]
+        self.current_part = 0
+        if self.lesson_parts:
+            print(f"Lesson Parts Loaded: {self.lesson_parts}")  # Debug print for parts loaded
+            self.ids.lesson_content.text = self.lesson_parts[self.current_part]
+        else:
+            print("No content available.")
+            self.ids.lesson_content.text = "No content available."
+    def update_lesson_display(self):
+        """Update the content display based on the current part index."""
+        content = self.lesson_parts[self.current_part]
+        self.ids.lesson_content.text = content
 
-#Function to generate cumulative review for testing mode
-def cumulative_review_test(progress): # Define the cumulative_review_test function
-    questions = generate_cumulative_review(progress) # Generate cumulative review questions
-    correct_answers = 0 # Initialize the number of correct answers
+    
+    def next_lesson_part(self):
+        if self.current_part < len(self.lesson_parts) - 1:
+            self.current_part += 1
+            print(f"Moving to Next Part: {self.current_part}, Content: {self.lesson_parts[self.current_part]}")
+            self.update_lesson_display()
+        else:
+            print("Reached end of lesson, transitioning to questions.")
+            self.transition_to_questions()
+        self.update_navigation_buttons()
 
-    print(Fore.MAGENTA + "\n--- Final Cumulative Review: All Chapters ---") # Print the cumulative review title
-    print(Fore.YELLOW + f"You need {int(len(questions) * 0.7)} correct answers to pass.\n") # Print the passing score
+    def previous_lesson_part(self):
+        if self.current_part > 0:
+            self.current_part -= 1
+            print(f"Returning to Previous Part: {self.current_part}, Content: {self.lesson_parts[self.current_part]}")
+            self.update_lesson_display()
+        self.update_navigation_buttons()
 
-    # For each question in the cumulative review, run the ask_question_and_validate function and track the correct answers
-    for i, question_data in enumerate(questions): # Iterate over the questions
-        print(f"\nQuestion {i + 1}/{len(questions)}:") # Print the question number
-        chapter = question_data.get('chapter', 1) # Get the chapter number
-        lesson = question_data.get('lesson', None) # Get the lesson number
-        correct = ask_question_and_validate(question_data, progress, chapter, lesson) # Ask the question and validate the answer
-        if correct: # Handle correct answers
-            correct_answers += 1 # Increment the correct answers count
-        else: # Handle incorrect answers
-            # Record the mistake using add_mistake
-            progress.add_mistake( # Add the mistake to the progress object
-                chapter=chapter, # Pass the chapter number
-                lesson=lesson, # Pass the lesson number
-                question=question_data.get('question', ''), # Pass the question text
-                user_answer='Incorrect',  # Replace with actual user input if available
-                correct_answer=question_data.get('correct_answer', ''), # Pass the correct
-                feedback='',  # Provide feedback if available
-                original_lesson=question_data.get('original_lesson', None) # Pass the original lesson number
-            )
+    def update_navigation_buttons(self):
+        """Control the visibility and state of navigation buttons."""
+        # Control visibility and enable state of back button
+        self.ids.back_button.opacity = 1 if self.current_part > 0 else 0
+        self.ids.back_button.disabled = self.current_part <= 0
 
-    if correct_answers >= int(len(questions) * 0.7): # Check if the user passed the cumulative review
-        print(Fore.GREEN + "Congratulations! You passed the cumulative review!\n") # Print a success message
-        return True # Return True for passing the cumulative review
-    else: # Handle failing the cumulative review
-        print(Fore.RED + "You did not pass the cumulative review. Please try again.\n") # Print an error message
-        return False # Return False for failing the cumulative review
+    def transition_to_questions(self):
+        print("End of lesson content, transitioning to questions.")
 
-#Function to generate all lesson content and mistake data for testing mode
-def generate_all_lesson_content_and_mistakes(progress): # Define the generate_all_lesson_content_and_mistakes function
-    print(Fore.GREEN + "Generating lesson content and mistake data for all chapters and lessons...") # Print a success message
 
-    total_lessons = 0 # Initialize the total number of lessons
-    lessons_with_errors = [] # Initialize the list of lessons with errors
+class ProfileScreen(Screen):
+    pass
+class MistakesScreen(Screen):
+    pass
+class ChapterReviewScreen(Screen):
+    pass
+class CumulativeReviewScreen(Screen):
+    pass
+Builder.load_file("main.kv")
 
-    # Iterate over the chapters and lessons to generate content and mistakes
-    for chapter_num, chapter_info in chapters.items(): # Iterate over the chapters
-        lessons = chapter_info['lessons'] # Get the lessons in the chapter
-        for lesson_num in lessons: # Iterate over the lessons
-            # Skip if it's a cumulative review chapter (like chapter 21 in your config)
-            if chapter_num == 21: # Check if it's a cumulative review chapter
-                continue
-            # Generate lesson content for lessons 1-7
-            if lesson_num != 8:  # Exclude review lessons for content generation
-                try: # Try to generate lesson content
-                    lesson_title = chapters[chapter_num]['lessons'][lesson_num]['title'] # Get the lesson title
-                    print(Fore.GREEN + f"Generating content for Chapter {chapter_num}, Lesson {lesson_num}: {lesson_title}") # Print a success message
-                    total_lessons += 1 # Increment the total number of lessons 
-                except Exception as e: # Handle errors during content generation
-                    print(Fore.RED + f"Failed to generate content for Chapter {chapter_num}, Lesson {lesson_num}: {e}") # Print an error message
-                    lessons_with_errors.append((chapter_num, lesson_num)) # Add the lesson to the list of lessons with errors
-            else: # Handle review lessons
-                print(Fore.YELLOW + f"Skipping content generation for Chapter {chapter_num}, Lesson {lesson_num} (Review Lesson)") # Print a message for review lessons
-
-            # Generate mistake data for all lessons, including review lessons
-            try: # Try to generate mistake data
-                # Determine the original_lesson
-                if lesson_num == 8: # For review lessons, pick a random lesson between 1 and 7
-                    original_lesson = random.randint(1, 7) # Generate a random lesson number
-                else: # For non-review lessons, use the lesson number
-                    original_lesson = lesson_num # Set the original lesson to the lesson number
-
-                # Create a sample mistake entry
-                question_text = f"Sample question for Chapter {chapter_num}, Lesson {lesson_num}" # Generate a sample question text
-                user_answer = "Incorrect answer" # Generate a sample user answer
-                correct_answer = "Correct answer" # Generate a sample correct answer
-
-                # Save the mistake to the database
-                with sqlite3.connect('progress.db') as conn: # Connect to the database
-                    cursor = conn.cursor() # Create a cursor object
-                    cursor.execute( # Execute an SQL query
-                        '''
-                        INSERT INTO mistakes (user_id, chapter, lesson, question, user_answer, correct_answer, original_lesson)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ''',
-                        (progress.user_id, chapter_num, lesson_num, question_text, user_answer, correct_answer, original_lesson) # Pass the mistake data as parameters
-                    )
-                    conn.commit() # Commit the transaction
-            except sqlite3.Error as e: # Handle database errors
-                print(Fore.RED + f"Failed to save mistake for Chapter {chapter_num}, Lesson {lesson_num}: {e}") # Print an error message
-            except Exception as e:  # Handle other errors
-                print(Fore.RED + f"Unexpected error for Chapter {chapter_num}, Lesson {lesson_num}: {e}") # Print an error message
-
-    print(Fore.GREEN + f"\nGenerated lesson content for {total_lessons} lessons.") # Print the total number of lessons with content generated
-    if lessons_with_errors: # Check if there are lessons with errors
-        print(Fore.RED + "Some lessons encountered errors during content generation:") # Print a message for lessons with errors
-        for chapter_num, lesson_num in lessons_with_errors: # Iterate over the lessons with errors
-            print(f"- Chapter {chapter_num}, Lesson {lesson_num}") # Print the chapter and lesson numbers
-    else: # Handle all lessons generated successfully
-        print(Fore.GREEN + "All lesson content generated successfully.") # Print a success message
-
-    print(Fore.GREEN + "Mistake data generated for all lessons.") # Print a success message
-
+class MyApp(App):
+    def build(self):
+        sm = ScreenManager()
+        sm.add_widget(LoginScreen(name="login"))
+        sm.add_widget(MainScreen(name="main"))
+        sm.add_widget(LessonScreen(name="lesson"))
+        sm.add_widget(ProfileScreen(name="profile"))
+        sm.add_widget(MistakesScreen(name="mistakes"))
+        return sm
 # Main entry point
-if __name__ == "__main__": # Check if the script is being run directly
-    welcome()  # Start with the welcome screen
+if __name__ == "__main__":
+    MyApp().run()

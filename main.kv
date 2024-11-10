@@ -1,0 +1,251 @@
+ScreenManager:
+    LoginScreen:
+    MainScreen:
+    LessonScreen:
+    ProfileScreen:
+    MistakesScreen:
+    ChapterReviewScreen:
+    CumulativeReviewScreen:
+
+<LoginScreen>:
+    name: "login"
+    AnchorLayout:  # Wrap everything in an AnchorLayout for centering
+        anchor_x: 'center'
+        anchor_y: 'center'
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint: 0.8, None  # Adjusts for mobile scaling
+            height: self.minimum_height
+            padding: 20
+            spacing: 10
+            canvas.before:
+                Color:
+                    rgba: 0.15, 0.15, 0.15, 1  # Slightly lighter black background
+                RoundedRectangle:
+                    size: self.size
+                    pos: self.pos
+                    radius: [10]
+            
+            Label:
+                id: form_label
+                text: "Login"
+                font_size: 24
+                size_hint_y: None
+                height: 30
+
+            TextInput:
+                id: name_input
+                hint_text: "Name"
+                multiline: False
+                size_hint_x: 1
+                size_hint_y: None
+                height: 30
+                opacity: 0 if root.ids.main_button.text == "Login" else 1
+
+            TextInput:
+                id: username
+                hint_text: "Email"
+                multiline: False
+                size_hint_x: 1
+                size_hint_y: None
+                height: 30
+
+            TextInput:
+                id: password
+                hint_text: "Password"
+                password: True
+                multiline: False
+                size_hint_x: 1
+                size_hint_y: None
+                height: 30
+
+            Button:
+                id: main_button
+                text: "Login"
+                size_hint_x: 1
+                size_hint_y: None
+                height: 40
+                on_press: root.authenticate_or_register(root.ids.name_input.text, username.text, password.text)
+
+            Label:
+                id: message_label
+                text: ""
+                size_hint_y: None
+                height: 30
+                size_hint_x: 1
+                color: (1, 0, 0, 1)  # Red color for error messages (optional)
+
+            Label:
+                id: switch_text
+                text: "[color=0000FF][ref=toggle]Not Registered? Register Here[/ref][/color]"
+                markup: True
+                size_hint_y: None
+                height: 30
+                size_hint_x: 1
+                on_ref_press: root.toggle_form()
+
+<MainScreen>:
+    name: "main"
+    BoxLayout:
+        orientation: 'vertical'
+
+        # Header Area
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: 0.1
+            padding: [10, 10]
+            spacing: 10
+            canvas.before:
+                Color:
+                    rgba: 0.1, 0.1, 0.1, 1  # Darker gray color
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            # Profile Picture Placeholder
+            Button:
+                size_hint: None, None
+                width: 40
+                height: 40
+                background_normal: ''
+                canvas.before:
+                    Color:
+                        rgba: 0.7, 0.7, 0.7, 1  # Light gray color for the placeholder
+                    Ellipse:
+                        size: self.size
+                        pos: self.pos
+            Widget:  # Spacer
+            Button:
+                text: "Mistakes"
+                size_hint_x: None
+                width: self.texture_size[0] + 20
+                on_press: root.manager.current = "mistakes"  # Navigate to Mistakes screen
+            Button:
+                text: "Profile"
+                size_hint_x: None
+                width: self.texture_size[0] + 20
+                on_press: root.manager.current = "profile"  # Navigate to Profile screen
+            Button:
+                text: "Logout"
+                size_hint_x: None
+                width: self.texture_size[0] + 20
+                on_press: root.manager.current = "login"  # Navigate to Login screen
+
+        # Roadmap Area (Including Roadmap Label)
+        BoxLayout:
+            orientation: 'vertical'
+            padding: [10, 10]
+            spacing: 10
+
+            # Roadmap Label (Centered)
+            Label:
+                text: "Roadmap"
+                font_size: 20
+                color: (1, 1, 1, 1)  # White text
+                size_hint_y: None
+                height: self.texture_size[1]
+
+            # Scrollable Roadmap Area
+            ScrollView:
+                do_scroll_x: True
+                do_scroll_y: False
+                BoxLayout:
+                    orientation: 'horizontal'
+                    padding: [20, 20]
+                    spacing: 20
+                    size_hint_x: None
+                    width: self.minimum_width
+                    id: roadmap_layout
+
+<LessonScreen>:
+    name: "lesson"
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [10, 10, 10, 10]
+        spacing: 10
+        BoxLayout:
+            size_hint_y: 0.1
+            Button:
+                text: "Back"
+                size_hint: (None, None)
+                size: (100, 40)
+                pos_hint: {"left": 1}
+                on_press: root.manager.current = "main"
+
+        BoxLayout:
+            orientation: 'horizontal'
+            RelativeLayout:
+                Image:
+                    id: chalkboard_image
+                    source: 'Assets/Chalkboard.png'
+                    allow_stretch: True
+                    keep_ratio: False
+                    size_hint: (1, 1.03)
+                Label:
+                    id: lesson_content
+                    text: "Lesson Content Here"
+                    text_size: self.width - 55, None  # Ensure text wraps within specified width
+                    halign: 'center'  # Default alignment
+                    valign: 'middle'  # Default alignment
+                    padding:  [30, 20]
+                    height: min(self.texture_size[1], self.parent.height - 50)  # Limit height dynamically
+                    width: self.parent.width - 40  # Ensure width fits within parent
+                    color: 0, 0, 0, 1
+                Image:
+                    id: python_character
+                    source: 'Assets/PyThePython.png'
+                    allow_stretch: True
+                    keep_ratio: True
+                    size_hint: (0.35, 0.35)
+                    pos_hint: {'left': -0.3}
+        BoxLayout:
+            size_hint_y: 0.2
+            orientation: 'horizontal'
+            padding: [20, 0, 20, 0]
+            spacing: 20
+            Button:
+                text: "Back"
+                size_hint: (None, None)
+                size: (100, 40)
+                on_press: root.previous_lesson_part()
+                id: back_button
+                opacity: 0  # Initially hidden
+                disabled: True  # Initially disabled
+
+            Button:
+                text: "Next"
+                size_hint: (None, None)
+                size: (100, 40)
+                on_press: root.next_lesson_part()
+
+
+<ProfileScreen>
+    name: "profile"
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: username
+            text: "Username:"
+
+<MistakesScreen>:
+    name: "mistakes"
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: mistakes
+            text: "Mistakes:"
+
+<ChapterReviewScreen>:
+    name: "chapter review"
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: chapter_review
+            text: "Chapter Review:"
+
+<CumulativeReviewScreen>:
+    name: "cumulative review"
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: cumulative_review
+            text: "Cumulative Review:"
