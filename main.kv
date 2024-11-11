@@ -4,8 +4,7 @@ ScreenManager:
     LessonScreen:
     ProfileScreen:
     MistakesScreen:
-    ChapterReviewScreen:
-    CumulativeReviewScreen:
+    QuestionScreen:
 
 <LoginScreen>:
     name: "login"
@@ -89,19 +88,19 @@ ScreenManager:
     BoxLayout:
         orientation: 'vertical'
 
-        # Header Area
+        # Header Area (Retained)
         BoxLayout:
             orientation: 'horizontal'
-            size_hint_y: 0.1
+            size_hint_y: None
+            height: 50
             padding: [10, 10]
             spacing: 10
             canvas.before:
                 Color:
-                    rgba: 0.1, 0.1, 0.1, 1  # Darker gray color
+                    rgba: 0.1, 0.1, 0.1, 1
                 Rectangle:
                     size: self.size
                     pos: self.pos
-            # Profile Picture Placeholder
             Button:
                 size_hint: None, None
                 width: 40
@@ -109,52 +108,39 @@ ScreenManager:
                 background_normal: ''
                 canvas.before:
                     Color:
-                        rgba: 0.7, 0.7, 0.7, 1  # Light gray color for the placeholder
+                        rgba: 0.7, 0.7, 0.7, 1
                     Ellipse:
                         size: self.size
                         pos: self.pos
-            Widget:  # Spacer
+            Widget:
             Button:
                 text: "Mistakes"
                 size_hint_x: None
                 width: self.texture_size[0] + 20
-                on_press: root.manager.current = "mistakes"  # Navigate to Mistakes screen
+                on_press: root.manager.current = "mistakes"
             Button:
                 text: "Profile"
                 size_hint_x: None
                 width: self.texture_size[0] + 20
-                on_press: root.manager.current = "profile"  # Navigate to Profile screen
+                on_press: root.manager.current = "profile"
             Button:
                 text: "Logout"
                 size_hint_x: None
                 width: self.texture_size[0] + 20
-                on_press: root.manager.current = "login"  # Navigate to Login screen
+                on_press: root.manager.current = "login"
 
-        # Roadmap Area (Including Roadmap Label)
-        BoxLayout:
-            orientation: 'vertical'
-            padding: [10, 10]
-            spacing: 10
-
-            # Roadmap Label (Centered)
-            Label:
-                text: "Roadmap"
-                font_size: 20
-                color: (1, 1, 1, 1)  # White text
+        # Vertical Scrollable Area for Chapters and Lessons
+        ScrollView:
+            do_scroll_x: False
+            do_scroll_y: True
+            bar_width: 10  # Optional: set scrollbar width for visibility
+            BoxLayout:
+                id: roadmap_layout
+                orientation: 'vertical'
                 size_hint_y: None
-                height: self.texture_size[1]
-
-            # Scrollable Roadmap Area
-            ScrollView:
-                do_scroll_x: True
-                do_scroll_y: False
-                BoxLayout:
-                    orientation: 'horizontal'
-                    padding: [20, 20]
-                    spacing: 20
-                    size_hint_x: None
-                    width: self.minimum_width
-                    id: roadmap_layout
+                height: self.minimum_height  # Dynamically adjust height
+                spacing: 10  # Adjust spacing if necessary
+                padding: [10, 10, 10, 20]  # Padding (left, top, right, bottom)
 
 <LessonScreen>:
     name: "lesson"
@@ -174,29 +160,17 @@ ScreenManager:
         BoxLayout:
             orientation: 'horizontal'
             RelativeLayout:
-                Image:
-                    id: chalkboard_image
-                    source: 'Assets/Chalkboard.png'
-                    allow_stretch: True
-                    keep_ratio: False
-                    size_hint: (1, 1.03)
                 Label:
                     id: lesson_content
                     text: "Lesson Content Here"
                     text_size: self.width - 55, None  # Ensure text wraps within specified width
                     halign: 'center'  # Default alignment
                     valign: 'middle'  # Default alignment
-                    padding:  [30, 20]
+                    padding: [30, 20]
                     height: min(self.texture_size[1], self.parent.height - 50)  # Limit height dynamically
                     width: self.parent.width - 40  # Ensure width fits within parent
-                    color: 0, 0, 0, 1
-                Image:
-                    id: python_character
-                    source: 'Assets/PyThePython.png'
-                    allow_stretch: True
-                    keep_ratio: True
-                    size_hint: (0.35, 0.35)
-                    pos_hint: {'left': -0.3}
+                    color: 1, 1, 1, 1  # Change text color to white for visibility on a black background
+
         BoxLayout:
             size_hint_y: 0.2
             orientation: 'horizontal'
@@ -217,7 +191,6 @@ ScreenManager:
                 size: (100, 40)
                 on_press: root.next_lesson_part()
 
-
 <ProfileScreen>
     name: "profile"
     BoxLayout:
@@ -234,18 +207,51 @@ ScreenManager:
             id: mistakes
             text: "Mistakes:"
 
-<ChapterReviewScreen>:
-    name: "chapter review"
+<QuestionScreen>:
+    name: "questions"
     BoxLayout:
         orientation: 'vertical'
-        Label:
-            id: chapter_review
-            text: "Chapter Review:"
+        padding: [10, 10, 10, 10]
+        spacing: 10
 
-<CumulativeReviewScreen>:
-    name: "cumulative review"
-    BoxLayout:
-        orientation: 'vertical'
-        Label:
-            id: cumulative_review
-            text: "Cumulative Review:"
+        BoxLayout:
+            size_hint_y: 0.1
+            Button:
+                text: "Back"
+                size_hint: (None, None)
+                size: (100, 40)
+                pos_hint: {"left": 1}
+                on_press: root.manager.current = "main"
+
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: 0.6  # 60% of the remaining space
+            padding: [10, 10, 10, 10]
+            Label:
+                id: question_content
+                text: "Your question text here"
+                text_size: self.width, None
+                size_hint_y: None
+                height: self.texture_size[1]
+                valign: "top"
+                halign: "left"
+                padding: 10, 10
+
+        BoxLayout:
+            id: answer_area
+            orientation: 'horizontal'
+            size_hint_y: 0.4  # 40% of the remaining space
+            padding: [10, 0, 10, 0]
+            spacing: 10
+
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Button:
+                text: "Submit"
+                size_hint: (None, None)
+                size: (100, 40)
+                on_press: root.submit_answer()
+
+
+

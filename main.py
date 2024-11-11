@@ -7,18 +7,16 @@ from fuzzywuzzy import fuzz # Import the fuzz function from fuzzywuzzy to compar
 import subprocess # Import the subprocess module to run the user's code
 import sys # Import the sys module to access system-specific parameters and functions
 import random # Import the random module to generate random numbers
+from kivy.config import Config
+Config.set('graphics', 'width', '360')  # Example width for a phone screen
+Config.set('graphics', 'height', '640')  # Example height for a phone screen
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.lang import Builder
-from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
-from kivy.graphics import Color, Ellipse, Triangle
-from kivy.uix.widget import Widget
-from kivy.config import Config
-from kivy.metrics import dp
-
-Config.set('graphics', 'width', '360')  # Example width for a phone screen
-Config.set('graphics', 'height', '640')  # Example height for a phone screen
+from kivy.uix.textinput import TextInput
+from kivy.uix.label import Label
+from kivy.uix.gridlayout import GridLayout
 
 #Run the user's code and capture output or errors
 def run_user_code(code): # Define the run_user_code function
@@ -39,10 +37,11 @@ init(autoreset=True) # Initialize colorama
 class UserProgress: # Define the UserProgress class
     
     # Initialize the UserProgress class
-    def __init__(self, user_id): # Define the __init__ function
-        self.user_id = user_id # Set the user ID
-        self.chapter = 1  # Start at Chapter 1
-        self.lesson = 1  # Start at Lesson 1
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.chapter = 1  # Default start at Chapter 1
+        self.lesson = 1  # Default start at Lesson 1
+        self.load_progress()  # Load progress from database on initialization
         
     # Add a mistake to the lesson
     def add_mistake(self, chapter, lesson, question, user_answer, correct_answer, feedback=None, user_code=None, user_output=None, user_errors=None, original_lesson=None): # Define the add_mistake function
@@ -106,18 +105,35 @@ class UserProgress: # Define the UserProgress class
             print(f"Failed to retrieve mistakes: {e}") # Print an error message
 
     # save the user's progress       
-    def save_progress(self): # Define the save_progress function
-        try: # Try to save the user's progress to the database
-            with sqlite3.connect('progress.db') as conn: # Connect to the database
-                cursor = conn.cursor() # Create a cursor object
-                cursor.execute( # Execute an SQL query
-                    'UPDATE users SET chapter = ?, lesson = ? WHERE id = ?', # Update the user's chapter and lesson
-                    (self.chapter, self.lesson, self.user_id) # Pass the chapter, lesson, and user ID as parameters
+    def save_progress(self):
+        try:
+            with sqlite3.connect('progress.db') as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'UPDATE users SET chapter = ?, lesson = ? WHERE id = ?',
+                    (self.chapter, self.lesson, self.user_id)
                 )
-                conn.commit() # Commit the transaction
-        except sqlite3.Error as e: # Handle database errors
-            print(f"Failed to save progress: {e}") # Print an error message
-
+                conn.commit()
+                print(f"Progress saved: Chapter {self.chapter}, Lesson {self.lesson} for User ID {self.user_id}")  # Debugging line
+        except sqlite3.Error as e:
+            print(f"Failed to save progress: {e}")
+    def load_progress(self):
+        """Load the user's progress from the database."""
+        try:
+            with sqlite3.connect('progress.db') as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT chapter, lesson FROM users WHERE id = ?',
+                    (self.user_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    self.chapter, self.lesson = row
+                    print(f"Loaded progress: Chapter {self.chapter}, Lesson {self.lesson} for User ID {self.user_id}")
+                else:
+                    print(f"No progress found for User ID {self.user_id}, starting at default values.")
+        except sqlite3.Error as e:
+            print(f"Failed to load progress: {e}")
     #calculate the chapter score
     def calculate_chapter_score(progress): # Define the calculate_chapter_score function
         try: # Try to calculate the chapter score
@@ -155,71 +171,6 @@ class UserProgress: # Define the UserProgress class
 # Helper function to calculate the percentage score
 def calculate_percentage_score(correct, total): # Define the calculate_percentage_score function
     return (correct / total) * 100 if total > 0 else 0 # Calculate the percentage score
-
-# Function to generate the lesson content, questions and track user progress
-def play_lesson(progress, chapter, lesson, lesson_content): # Define the play_lesson function
-    try: # Try to clear the user's previous mistakes
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            cursor.execute( # Execute an SQL query
-                '''
-                DELETE FROM mistakes WHERE user_id = ? AND chapter = ? AND lesson = ?
-                ''',
-                (progress.user_id, chapter, lesson) # Pass the user ID, chapter, and lesson as parameters
-            )
-            conn.commit() # Commit the transaction
-    except sqlite3.Error as e: # Handle database errors
-        print(f"Failed to clear previous mistakes: {e}") # Print an error message
-
-    print(Fore.CYAN + f"\n--- {chapters[chapter]['title']} ---") # Print the chapter title
-    print(Fore.CYAN + f"--- Lesson {lesson}: {chapters[chapter]['lessons'][lesson]['title']} ---") # Print the lesson title
-
-    print(Fore.YELLOW + "\nLesson Content:\n") # Print the lesson content header
-    print(lesson_content) # Print the lesson content
-
-    # Generate questions based on the lesson content
-    question_count = chapters[chapter]['lessons'][lesson].get('question_count') # Get the question count for the lesson
-    if not question_count: # Check if the question count is missing
-        print(Fore.RED + "Error: No question count specified for this lesson.") # Print an error message
-        return # Return if the question count is missing
-
-    questions = generate_questions_from_content(chapter, lesson, lesson_content, question_count) # Generate questions from the lesson content
-
-    correct_answers = 0 # Initialize the number of correct answers
-
-    # For each question in the lesson, run the ask_question_and_validate function and track the correct answers
-    for i, question_data in enumerate(questions): # Iterate over the questions
-        print(f"\nQuestion {i + 1}/{question_count}:") # Print the question number
-        correct = ask_question_and_validate(question_data, progress, chapter, lesson) # Ask the question and validate the answer
-
-        if correct: # Check if the answer is correct
-            correct_answers += 1 # Increment the correct answers count
-
-    print(f"\nLesson {lesson} complete! You answered {correct_answers} out of {question_count} correctly.") # Print the lesson completion message
-
-    try: # Try to save the lesson score to the database
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            cursor.execute( # Execute an SQL query
-                '''
-                INSERT OR REPLACE INTO lesson_scores (user_id, chapter, lesson, correct, total)
-                VALUES (?, ?, ?, ?, ?)
-                ''',
-                (progress.user_id, chapter, lesson, correct_answers, question_count) # Pass the parameters
-            ) 
-            conn.commit() # Commit the transaction
-    except sqlite3.Error as e: # Handle database errors
-        print(f"Failed to save lesson score: {e}") # Print an error message
-
-    # Unlock the next lesson if applicable
-    total_lessons_in_chapter = len(chapters[chapter]['lessons']) - 1  # Exclude the review test
-    if lesson < total_lessons_in_chapter: # Check if the lesson is not the last lesson
-        progress.lesson += 1 # Advance to the next lesson
-    else: # Handle completing all lessons in the chapter
-        progress.lesson = total_lessons_in_chapter + 1 # Include the review test as the next lesson
-        print(Fore.GREEN + "You have completed all lessons in this chapter!") # Print a success message
-
-    progress.save_progress() # Save the user's progress
 
 # Function to ask questions and validate answers **ChatGPT was used to assist with the creation of this function**
 def ask_question_and_validate(question_data, progress=None, chapter=None, lesson=None): # Define the ask_question_and_validate function
@@ -523,93 +474,94 @@ class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.user_id = None  # Initialize user_id
-    def get_chapters(self):
-        return chapters  # Returns the chapters dictionary imported from config.py
 
     def on_enter(self):
-        self.populate_roadmap()
+        # Load user progress
+        if self.user_id is not None:
+            user_progress = UserProgress(user_id=self.user_id)
+            self.populate_roadmap(user_progress)
 
-    def populate_roadmap(self):
+    def populate_roadmap(self, user_progress=None):
         if not self.user_id:
             print("Error: user_id is not set.")
-            return  # Exit the function or handle the error as needed
+            return
 
         roadmap_layout = self.ids.roadmap_layout
-        roadmap_layout.clear_widgets()  # Clear previous widgets if any
+        roadmap_layout.clear_widgets()  # Clear any existing widgets
 
-        chapters = self.get_chapters()  # Replace with your method to fetch chapters
-        user_progress = UserProgress(user_id=self.user_id)  # Replace with appropriate user progress instance
-        unlocked_chapters = user_progress.chapter  # Assuming progress.chapter gives the current unlocked chapter
+        if user_progress is None:
+            user_progress = UserProgress(user_id=self.user_id)
+        unlocked_chapters = user_progress.chapter
+        unlocked_lessons = user_progress.lesson
 
+        total_height = 0  # Track the total height of the content for ScrollView
+
+        # Loop through chapters defined in config.py
         for chapter_num, chapter_data in chapters.items():
             if chapter_num > unlocked_chapters:
                 continue  # Skip locked chapters
 
-            chapter_title = chapter_data['title']
-            
-            # Main container for chapter and lesson with vertical centering
-            chapter_and_lesson_container = BoxLayout(
-                orientation='horizontal',
+            # Parent container for each chapter (GridLayout for consistent sizing)
+            chapter_container = GridLayout(
+                cols=1,
+                size_hint_y=None,
                 spacing=10,
-                size_hint=(None, None),
-                height=60,
-                width=300,
-                pos_hint={"center_y": 0.5}  # This helps with centering within the parent layout
+                padding=[10, 10],
             )
-            chapter_and_lesson_container.add_widget(Widget())  # Spacer for centering
-            
-            # Chapter widget container
-            chapter_box = BoxLayout(
-                orientation='vertical',
-                size_hint=(None, None),
-                width=150,
-                height=60,
-                pos_hint={"center_y": 0.5}  # Ensure centered positioning
-            )
-            chapter_label = Button(
-                text=f"Chapter {chapter_num}\n{chapter_title}",
-                size_hint=(None, None),
-                width=150,
-                height=50,
-                background_normal='',
-                background_color=(0.3, 0.3, 0.3, 1),
-            )
-            chapter_box.add_widget(chapter_label)
-            chapter_and_lesson_container.add_widget(chapter_box)
 
-            # Lesson widget container
-            lesson_box = BoxLayout(
-                orientation='vertical',
-                size_hint=(None, None),
-                width=40,
-                height=60
+            # Chapter indicator (Label)
+            chapter_label = Label(
+                text=f"Chapter {chapter_num}: {chapter_data.get('title', 'Unknown')}",
+                size_hint_y=None,
+                height=40,
+                color=(1, 1, 1, 1),
+                halign='center',
+                valign='middle',
+                text_size=(self.width - 40, None),  # Adjust text wrapping width (subtract some padding)
+                size_hint_x=None,  # Required to control text wrapping
+                width=self.width - 40  # Ensure it matches the `text_size` width to wrap properly
             )
-            lesson_num = 1  # Show only the first unlocked lesson for now
-            lesson_data = chapter_data['lessons'].get(lesson_num)
-            if lesson_data:
-                lesson_button = Button(
-                    text=f"{lesson_num}\n{lesson_data['title']}",
-                    size_hint=(None, None),
-                    width=40,
-                    height=40,
-                    background_normal='',
-                    background_color=(0.6, 0.6, 0.6, 1),  # Gray circle
-                    on_press=lambda btn, ch=chapter_num, ln=lesson_num: self.load_lesson_screen(ch, ln)  # Call a method to load lesson
-                )
-                lesson_box.add_widget(Widget())  # Spacer for vertical centering
-                lesson_box.add_widget(lesson_button)
-                lesson_box.add_widget(Widget())  # Spacer for vertical centering
-                chapter_and_lesson_container.add_widget(lesson_box)
+            chapter_container.add_widget(chapter_label)
 
-            chapter_and_lesson_container.add_widget(Widget())  # Spacer for centering
+            # Container for lessons (GridLayout)
+            lesson_box = GridLayout(
+                cols=1,
+                size_hint_y=None,
+                spacing=10,
+                padding=[20, 10],
+            )
 
-            # Add the chapter_and_lesson_container to the roadmap layout
-            roadmap_layout.add_widget(chapter_and_lesson_container)
+            # Loop through lessons (ensure all unlocked lessons are shown)
+            for lesson_num in range(1, unlocked_lessons + 1):
+                lesson_data = chapter_data['lessons'].get(lesson_num)
+                if lesson_data:
+                    lesson_button = Button(
+                        text=f"Lesson {lesson_num}",
+                        size_hint_y=None,
+                        height=40,
+                        on_press=lambda btn, ch=chapter_num, ln=lesson_num: self.load_lesson_screen(ch, ln)
+                    )
+                    lesson_box.add_widget(lesson_button)
+
+            # Adjust lesson_box height based on its contents
+            lesson_box.height = lesson_box.minimum_height
+            chapter_container.add_widget(lesson_box)
+
+            # Set container height based on contents
+            chapter_container.height = chapter_label.height + lesson_box.height + 20  # Adding padding
+            roadmap_layout.add_widget(chapter_container)
+
+            # Increment total height for ScrollView content
+            total_height += chapter_container.height
+
+        # Adjust the height of the roadmap_layout based on total content
+        roadmap_layout.height = total_height
+
     def load_lesson_screen(self, chapter, lesson):
         # Navigate to the lesson screen and load the lesson
-        lesson_screen = self.manager.get_screen('lesson')  # Get the lesson screen instance
-        lesson_screen.load_lesson(self.user_id, chapter, lesson)  # Pass necessary data to load the lesson
-        self.manager.current = 'lesson'  # Switch to the lesson screen
+        lesson_screen = self.manager.get_screen('lesson')
+        lesson_screen.load_lesson(self.user_id, chapter, lesson)
+        self.manager.current = 'lesson'
 
 class LessonScreen(Screen):
     lesson_parts = []  # Default value for lesson_parts
@@ -619,26 +571,71 @@ class LessonScreen(Screen):
         super().__init__(**kwargs)
         self.lesson_parts = []  # Initialize an empty list for lesson parts
         self.current_part = 0  # Initialize current part index
+        self.chapter = None  # Initialize chapter attribute
+        self.lesson = None  # Initialize lesson attribute
 
     def load_lesson(self, user_id, chapter, lesson):
         print(f"Loading lesson for User ID: {user_id}, Chapter: {chapter}, Lesson: {lesson}")
-        progress = UserProgress(user_id=user_id)
-        lesson_content = generate_lesson_content(progress, chapter, lesson)
-        print(f"Generated Lesson Content:\n{lesson_content}")  # Inspect the raw content
+        self.chapter = chapter  # Store the chapter value
+        self.lesson = lesson  # Store the lesson value
+        # Clear previous mistakes
+        try:
+            with sqlite3.connect('progress.db') as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''
+                    DELETE FROM mistakes WHERE user_id = ? AND chapter = ? AND lesson = ?
+                    ''',
+                    (user_id, chapter, lesson)
+                )
+                conn.commit()
+            print("Cleared previous mistakes for the current lesson.")
+        except sqlite3.Error as e:
+            print(f"Failed to clear previous mistakes: {e}")
 
+        # Load user progress
+        progress = UserProgress(user_id=user_id)
+
+        # Generate lesson content
+        lesson_content = generate_lesson_content(progress, chapter, lesson)
+        print(f"Generated Lesson Content:\n{lesson_content}")
+
+        # Split and store lesson parts
         self.lesson_parts = [part.strip() for part in lesson_content.split("\n\n") if part.strip()]
         self.current_part = 0
         if self.lesson_parts:
-            print(f"Lesson Parts Loaded: {self.lesson_parts}")  # Debug print for parts loaded
+            print(f"Lesson Parts Loaded: {self.lesson_parts}")
             self.ids.lesson_content.text = self.lesson_parts[self.current_part]
         else:
             print("No content available.")
             self.ids.lesson_content.text = "No content available."
+
+        # Generate questions from lesson content
+        question_count = chapters[chapter]['lessons'][lesson].get('question_count')
+        if not question_count:
+            print("Error: No question count specified for this lesson.")
+            self.questions = []  # Ensure questions list is initialized even if empty
+        else:
+            self.questions = generate_questions_from_content(chapter, lesson, lesson_content, question_count)
+            print(f"Generated Questions: {self.questions}")
+
+    def store_questions_for_transition(self, questions, chapter, lesson):
+        print("Entering store_questions_for_transition")  # Debug confirmation
+        question_screen = self.manager.get_screen("questions")
+        print(f"QuestionScreen reference: {question_screen}")  # Print to confirm retrieval
+        if question_screen:
+            print("Successfully retrieved QuestionScreen")
+            print(f"Calling set_questions with questions: {questions}")
+            question_screen.set_questions(questions, chapter, lesson)
+        else:
+            print("Failed to retrieve QuestionScreen")
+
+
+
     def update_lesson_display(self):
         """Update the content display based on the current part index."""
         content = self.lesson_parts[self.current_part]
         self.ids.lesson_content.text = content
-
     
     def next_lesson_part(self):
         if self.current_part < len(self.lesson_parts) - 1:
@@ -647,8 +644,9 @@ class LessonScreen(Screen):
             self.update_lesson_display()
         else:
             print("Reached end of lesson, transitioning to questions.")
-            self.transition_to_questions()
-        self.update_navigation_buttons()
+            self.store_questions_for_transition(self.questions, self.chapter, self.lesson)  # Add this call here if not present
+            self.manager.current = "questions"
+        self.update_navigation_buttons() 
 
     def previous_lesson_part(self):
         if self.current_part > 0:
@@ -663,10 +661,6 @@ class LessonScreen(Screen):
         self.ids.back_button.opacity = 1 if self.current_part > 0 else 0
         self.ids.back_button.disabled = self.current_part <= 0
 
-    def transition_to_questions(self):
-        print("End of lesson content, transitioning to questions.")
-
-
 class ProfileScreen(Screen):
     pass
 class MistakesScreen(Screen):
@@ -675,6 +669,105 @@ class ChapterReviewScreen(Screen):
     pass
 class CumulativeReviewScreen(Screen):
     pass
+class QuestionScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.questions = []  # To store the questions for the screen
+        self.current_question_index = 0  # To track the current question index
+        self.chapter = None  # To store the current chapter number
+        self.lesson = None  # To store the current lesson number
+        self.selected_answer = None  # To track selected answers for multiple choice
+    def set_questions(self, questions, chapter, lesson):
+        print(f"set_questions called with questions: {questions}, Chapter: {chapter}, Lesson: {lesson}")  # Debug statement
+        self.questions = questions
+        self.chapter = chapter
+        self.lesson = lesson
+        self.display_next_question()  # Ensure this call is here
+
+    def display_next_question(self):
+        print("display_next_question called")  # Debug statement
+        if not self.questions or self.current_question_index >= len(self.questions):
+            print("No questions available or end of questions reached.")
+            self.ids.question_content.text = "No questions available."
+
+            # Unlock the next lesson and save progress
+            user_progress = UserProgress(self.manager.get_screen('main').user_id)
+            if self.lesson is not None and self.chapter is not None:
+                total_lessons_in_chapter = len(chapters[self.chapter]['lessons']) - 1
+                if self.lesson < total_lessons_in_chapter:
+                    user_progress.lesson += 1  # Unlock the next lesson
+                else:
+                    user_progress.chapter += 1  # Unlock the next chapter if all lessons are complete
+                    user_progress.lesson = 1  # Reset to the first lesson of the next chapter
+                user_progress.save_progress()  # Ensure this line is called
+
+            # Transition back to the main screen
+            self.manager.current = 'main'
+            self.manager.get_screen('main').on_enter()  # Refresh the main screen if necessary
+            return
+
+        question = self.questions[self.current_question_index]
+        print(f"Displaying question: {question}")  # Debugging statement
+
+        # Display the question text
+        question_text = question.get('question', 'No question text available')
+        lines = question_text.split('\n')
+        filtered_lines = [line for line in lines if not line.startswith(('MULTIPLE CHOICE QUESTION', 'Chapter:', 'Lesson:', 'Options:', 'Question:'))]
+        cleaned_question_text = "\n".join(filtered_lines).strip()
+
+        # If multiple-choice, add options to the question text
+        if question.get('type') == 'multiple_choice':
+            options = question.get('options', {})
+            formatted_options = "\n".join([f"{key}) {value}" for key, value in options.items()])
+            cleaned_question_text = f"{cleaned_question_text}\n\n{formatted_options}"
+
+        self.ids.question_content.text = cleaned_question_text
+
+        # Clear existing input widgets
+        self.ids.answer_area.clear_widgets()
+
+        # Handle different question types
+        if question.get('type') == 'multiple_choice':
+            # Create buttons labeled "A", "B", "C", "D"
+            for key in ["A", "B", "C", "D"]:
+                btn = Button(text=key, size_hint=(None, None), height=40, width=40)  # Small buttons
+                btn.bind(on_press=self.on_option_selected)
+                self.ids.answer_area.add_widget(btn)
+        elif question.get('type') == 'true_false':
+            for option in ["True", "False"]:
+                btn = Button(text=option, size_hint=(None, None), height=40, width=100)
+                btn.bind(on_press=self.on_option_selected)
+                self.ids.answer_area.add_widget(btn)
+        else:  # For fill in the blank, write code, and scenarios
+            text_input = TextInput(hint_text="Enter your answer", multiline=False, size_hint=(0.8, None), height=40)
+            self.ids.answer_area.add_widget(text_input)
+            self.ids.user_input = text_input  # Reference for later use
+
+
+    def on_option_selected(self, instance):
+        # Change color to indicate selection and store the selected answer
+        for child in self.ids.answer_area.children:
+            if isinstance(child, Button):
+                child.background_color = [1, 1, 1, 1]  # Reset color
+        instance.background_color = [0, 1, 0, 1]  # Highlight selected button
+        self.selected_answer = instance.text
+
+    def submit_answer(self):
+        if self.questions:
+            question = self.questions[self.current_question_index]
+            if question.get('type') in ['multiple_choice', 'true_false']:
+                print(f"Submitted Answer: {self.selected_answer}")
+            else:  # For text input-based questions
+                user_answer = self.ids.user_input.text if hasattr(self.ids, 'user_input') else ""
+                print(f"Submitted Answer: {user_answer}")
+
+            # Move to the next question
+            self.current_question_index += 1
+            self.display_next_question()
+
+
+
+
 Builder.load_file("main.kv")
 
 class MyApp(App):
@@ -685,6 +778,9 @@ class MyApp(App):
         sm.add_widget(LessonScreen(name="lesson"))
         sm.add_widget(ProfileScreen(name="profile"))
         sm.add_widget(MistakesScreen(name="mistakes"))
+        sm.add_widget(QuestionScreen(name="questions"))
+        sm.add_widget(ChapterReviewScreen(name="chapter_review"))
+        sm.add_widget(CumulativeReviewScreen(name="cumulative_review"))
         return sm
 # Main entry point
 if __name__ == "__main__":
