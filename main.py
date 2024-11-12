@@ -20,20 +20,22 @@ from kivy.uix.gridlayout import GridLayout
 
 #Run the user's code and capture output or errors
 def run_user_code(code): # Define the run_user_code function
-    try: # Try to run the user's code
-        # Use subprocess to run the code and capture both stdout and stderr
-        result = subprocess.run( # Run the code with subprocess
-            [sys.executable, "-c", code],  # Run code with the current Python interpreter
-            capture_output=True, text=True, timeout=5 # Capture output as text and set a timeout
+    try: 
+        # Running code in a subprocess to prevent main app crashes
+        result = subprocess.run(
+            [sys.executable, "-c", code],  # Use current Python interpreter
+            capture_output=True, text=True, timeout=5  # Capture output/errors
         )
-        return result.stdout.strip(), result.stderr.strip() # Return the output and errors
-    except subprocess.TimeoutExpired: # Handle timeouts
-        return "", "Execution timed out." # Return an error message for timeouts
+        return result.stdout.strip(), result.stderr.strip()  # Return output and errors
+    except subprocess.TimeoutExpired: # Handle timeout
+        return "", "Execution timed out."  # Handle timeout case
+    except Exception as e: # Handle generic exceptions
+        return "", f"An error occurred: {str(e)}"  # Handle generic errors
 
 # Initialize colorama to reset color after each print
 init(autoreset=True) # Initialize colorama
 
-# Track user progress and score
+# Track user progress and score *currently using in Kivy code*
 class UserProgress: # Define the UserProgress class
     
     # Initialize the UserProgress class
@@ -168,252 +170,76 @@ class UserProgress: # Define the UserProgress class
             'total': total # Set the total number of questions
         })
     
-# Helper function to calculate the percentage score
+# Helper function to calculate the percentage score *will use keep this function for later implementation in Kivy code*
 def calculate_percentage_score(correct, total): # Define the calculate_percentage_score function
     return (correct / total) * 100 if total > 0 else 0 # Calculate the percentage score
 
-# Function to ask questions and validate answers **ChatGPT was used to assist with the creation of this function**
-def ask_question_and_validate(question_data, progress=None, chapter=None, lesson=None): # Define the ask_question_and_validate function
-    # Validate the question data
-    if not question_data or 'question' not in question_data: # Check if the question data is missing or invalid
-        raise ValueError("Error: Question data is missing or invalid.") # Raise a ValueError
+# # Function to generate review questions *will use keep this function for later implementation in Kivy code*
+# def review_test(progress): # Define the review_test function
+#     chapter = progress.chapter # Get the current chapter
+#     try: # Try to clear the user's previous mistakes
+#         with sqlite3.connect('progress.db') as conn: # Connect to the database
+#             cursor = conn.cursor() # Create a cursor object
+#             # Assuming lesson number for review test is always set to 8
+#             cursor.execute( # Execute an SQL query
+#                 '''
+#                 DELETE FROM mistakes WHERE user_id = ? AND chapter = ? AND lesson = ?
+#                 ''',
+#                 (progress.user_id, chapter, 8) # Pass the user ID, chapter, and lesson as parameters
+#             )
+#             conn.commit() # Commit the transaction
+#     except sqlite3.Error as e: # Handle database errors
+#         print(f"Failed to clear previous mistakes: {e}") # Print an error message
 
-    print(Fore.CYAN + f"\n{question_data['question']}") # Print the question
-    original_lesson = question_data.get('original_lesson') # Get the original lesson number
+#     questions = generate_review_questions(progress, chapter) # Generate review questions for the chapter
+#     correct_answers = 0 # Initialize the number of correct answers
 
-    # Display multiple choice questions with the options, labels, and texts
-    if question_data['type'] == "multiple_choice" and 'options' in question_data: # Check if the question type is multiple choice
-        # Log and print each option as it is processed
-        for label, option_text in question_data['options'].items(): # Iterate over the options
-            print(f"{label}: {option_text}") # Print the option
+#     print(Fore.MAGENTA + f"\n--- Review Test: {chapters[chapter]['title']} ---") # Print the review test title
+#     print(Fore.YELLOW + f"You need {int(len(questions) * 0.7)} correct answers to pass.\n") # Print the passing score
 
-        # Get user input and validate it
-        user_answer = input("Enter the letter of your answer (A, B, C, D): ").strip().upper() # Get the user's answer
+#     for i, question_data in enumerate(questions): # Iterate over the questions
+#         print(f"\nQuestion {i + 1}/{len(questions)}:") # Print the question number
+#         correct = ask_question_and_validate(question_data, progress, chapter, lesson=8) # Ask the question and validate the answer
+#         if correct: # Handle correct answers
+#             correct_answers += 1 # Increment the correct answers count
 
-        # Validate input
-        if user_answer not in question_data['options']: # Check if the user's answer is invalid
-            print(Fore.RED + "Invalid input.") # Print an error message
-            return False # Return False for an invalid answer
+#     if correct_answers >= int(len(questions) * 0.7): # Check if the user passed the review
+#         print(Fore.GREEN + "Congratulations! You passed the review.\n") # Print a success message
+#         return True # Return True for passing the review
+#     else: # Handle failing the review
+#         print(Fore.RED + "You did not pass the review. Try again!\n") # Print an error message
+#         return False # Return False for failing the review
 
-        # Check if the answer is correct
-        correct = user_answer == question_data['correct_answer'] # Check if the user's answer is correct
-        if correct: # Handle correct answers
-            print(Fore.GREEN + "Correct!") # Print a success message
-        else: # Handle incorrect answers
-            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}")  # Print an error message
-            if progress and chapter is not None and lesson is not None: # Check if progress tracking is enabled
-                progress.add_mistake( # Add the mistake to the progress tracker
-                    chapter=chapter, # Pass the chapter number
-                    lesson=lesson, # Pass the lesson number
-                    question=question_data['question'], # Pass the question text
-                    user_answer=user_answer, # Pass the user's answer
-                    correct_answer=question_data['correct_answer'], # Pass the correct answer
-                    original_lesson=original_lesson # Pass the original lesson number
-                )
-        return correct  # Return the correctness of the answer
-
-    # Display true or false questions   
-    elif question_data['type'] == "true_false": # Check if the question type is true or false
-        user_answer = input("True or False? ").strip().lower() # Get the user's answer
-        correct = user_answer == question_data['correct_answer'].lower() # Check if the user's answer is correct
-        if correct: # Handle correct answers
-            print(Fore.GREEN + "Correct!") # Print a success message
-        else: # Handle incorrect answers
-            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}")  # Print an error message
-            if progress and chapter is not None and lesson is not None: # Check if progress tracking is enabled
-                progress.add_mistake( # Add the mistake to the progress tracker
-                    chapter=chapter, # Pass the chapter number
-                    lesson=lesson, # Pass the lesson number
-                    question=question_data['question'], # Pass the question text
-                    user_answer=user_answer, # Pass the user's answer
-                    correct_answer=question_data['correct_answer'], # Pass the correct answer
-                    original_lesson=original_lesson # Pass the original lesson number
-                )
-        return correct # Return the correctness of the answer
-
-    # Display fill in the blank questions
-    elif question_data['type'] == "fill_in_the_blank": # Check if the question type is fill in the blank
-        user_answer = input("Fill in the blank: ").strip().lower() # Get the user's answer
-        correct = user_answer == question_data.get('correct_answer', '').lower() # Check if the user's answer is correct
-        if correct: # Handle correct answers
-            print(Fore.GREEN + "Correct!") # Print a success message
-        else: # Handle incorrect answers
-            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}")  # Print an error message
-            if progress and chapter is not None and lesson is not None: # Check if progress tracking is enabled
-                progress.add_mistake( # Add the mistake to the progress tracker
-                    chapter=chapter, # Pass the chapter number
-                    lesson=lesson, # Pass the lesson number
-                    question=question_data['question'], # Pass the question text
-                    user_answer=user_answer, # Pass the user's answer
-                    correct_answer=question_data['correct_answer'], # Pass the correct answer
-                    original_lesson=original_lesson # Pass the original lesson number
-                )
-        return correct # Return the correctness of the answer
-
-    # Display write code questions
-    elif question_data['type'] == "write_code": # Check if the question type is write code
-        print(Fore.CYAN + "\nWrite your code solution below. Use multiple lines if needed. Type 'END' on a new line when finished:") # Print the code prompt
-
-        # Collect multi-line user code input
-        user_code = "" # Initialize the user's code
-        while True: # Loop to collect the user's code
-            line = input() # Get the user's code line by line
-            if line.strip().upper() == "END": # Check if the user has finished entering code
-                break # Exit the loop
-            user_code += line + "\n" # Append the user's code to the full code
-
-        # Run the user's code and capture output or errors
-        user_output, user_errors = run_user_code(user_code) # Run the user's code
-
-        if user_errors: # Handle errors
-            print(f"\nYour code produced the following error:\n{user_errors}") # Print the error message
-        else: # Handle output
-            print(f"\nYour code produced the following output:\n{user_output}") # Print the output
-
-        # Validate the user's solution using GPT
-        correct, feedback = validate_answer_with_gpt( # Validate the user's answer with GPT
-            question_data, user_code=user_code, user_output=user_output # Pass the question data, user code, and user output
-        )
-
-        # Display the result based on GPT validation
-        if correct:  # Handle correct answers
-            print(Fore.GREEN + "Correct! Well done.") # Print a success message
-        else: # Handle incorrect answers
-            print(Fore.RED + "Incorrect. Review the feedback below:") # Print an error message
-            print(Fore.YELLOW + feedback) # Print the feedback
-            if progress and chapter is not None and lesson is not None and not correct: # Check if progress tracking is enabled
-                progress.add_mistake( # Add the mistake to the progress tracker
-                    chapter=chapter, # Pass the chapter number
-                    lesson=lesson, # Pass the lesson number
-                    question=question_data['question'], # Pass the question text
-                    user_answer=user_code, # Pass the user's code
-                    correct_answer=question_data['correct_answer'], # Pass the correct answer
-                    feedback=feedback, # Pass the feedback
-                    user_code=user_code, # Pass the user's code
-                    user_output=user_output if not user_errors else None, # Pass the user's output if there are no errors
-                    user_errors=user_errors if user_errors else None, # Pass the user's errors if there are errors
-                    original_lesson=original_lesson # Pass the original lesson number
-                )
-        return correct # Return the correctness of the answer
-
-    # Display scenario questions
-    elif question_data['type'] == "scenario": # Check if the question type is a scenario
-        user_response = input("Describe your response to the scenario: ").strip() # Get the user's response
-
-        # Validate the user's response using GPT
-        correct, feedback = validate_answer_with_gpt(
-            question_data=question_data,  # Pass the full dictionary
-            user_response=user_response # Pass the user's response
-        )
-
-        # Display the result based on GPT validation
-        if correct: # Handle correct answers
-            print(Fore.GREEN + "Correct! Well done.") # Print a success message
-        else: # Handle incorrect answers
-            print(Fore.RED + "Incorrect. Review the feedback below:") # Print an error message
-            print(Fore.YELLOW + feedback) # Print the feedback
-            print(Fore.RED + f"Incorrect. The correct answer was {question_data['correct_answer']}")  # Print an error message
-        if progress and chapter is not None and lesson is not None and not correct: # Check if progress tracking is enabled
-            progress.add_mistake( # Add the mistake to the progress tracker
-                chapter=chapter, # Pass the chapter number
-                lesson=lesson, # Pass the lesson number
-                question=question_data['question'], # Pass the question text
-                user_answer=user_response, # Pass the user's response
-                correct_answer=question_data['correct_answer'], # Pass the correct answer
-                feedback=feedback, # Pass the feedback
-                original_lesson=original_lesson # Pass the original lesson number
-            )
-        return correct # Return the correctness of the answer
-
-# Function to generate review questions
-def review_test(progress): # Define the review_test function
-    chapter = progress.chapter # Get the current chapter
-    try: # Try to clear the user's previous mistakes
-        with sqlite3.connect('progress.db') as conn: # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            # Assuming lesson number for review test is always set to 8
-            cursor.execute( # Execute an SQL query
-                '''
-                DELETE FROM mistakes WHERE user_id = ? AND chapter = ? AND lesson = ?
-                ''',
-                (progress.user_id, chapter, 8) # Pass the user ID, chapter, and lesson as parameters
-            )
-            conn.commit() # Commit the transaction
-    except sqlite3.Error as e: # Handle database errors
-        print(f"Failed to clear previous mistakes: {e}") # Print an error message
-
-    questions = generate_review_questions(progress, chapter) # Generate review questions for the chapter
-    correct_answers = 0 # Initialize the number of correct answers
-
-    print(Fore.MAGENTA + f"\n--- Review Test: {chapters[chapter]['title']} ---") # Print the review test title
-    print(Fore.YELLOW + f"You need {int(len(questions) * 0.7)} correct answers to pass.\n") # Print the passing score
-
-    for i, question_data in enumerate(questions): # Iterate over the questions
-        print(f"\nQuestion {i + 1}/{len(questions)}:") # Print the question number
-        correct = ask_question_and_validate(question_data, progress, chapter, lesson=8) # Ask the question and validate the answer
-        if correct: # Handle correct answers
-            correct_answers += 1 # Increment the correct answers count
-
-    if correct_answers >= int(len(questions) * 0.7): # Check if the user passed the review
-        print(Fore.GREEN + "Congratulations! You passed the review.\n") # Print a success message
-        return True # Return True for passing the review
-    else: # Handle failing the review
-        print(Fore.RED + "You did not pass the review. Try again!\n") # Print an error message
-        return False # Return False for failing the review
-
-#Function to generate cumulative review questions **currently note working as intended**
-def cumulative_review_test(progress): # Define the cumulative_review_test function
-    """Conduct the cumulative review covering all chapters and return pass status.""" 
-    questions = generate_cumulative_review(progress) # Generate cumulative review questions
-    correct_answers = 0 # Initialize the number of correct answers
+# #Function to generate cumulative review questions *will use keep this function for later implementation in Kivy code*
+# def cumulative_review_test(progress): # Define the cumulative_review_test function
+#     """Conduct the cumulative review covering all chapters and return pass status.""" 
+#     questions = generate_cumulative_review(progress) # Generate cumulative review questions
+#     correct_answers = 0 # Initialize the number of correct answers
  
-    print(Fore.MAGENTA + "\n--- Final Cumulative Review: All Chapters ---") # Print the cumulative review title
-    print(Fore.YELLOW + f"You need {int(len(questions) * 0.7)} correct answers to pass.\n") # Print the passing score
+#     print(Fore.MAGENTA + "\n--- Final Cumulative Review: All Chapters ---") # Print the cumulative review title
+#     print(Fore.YELLOW + f"You need {int(len(questions) * 0.7)} correct answers to pass.\n") # Print the passing score
     
-    # For each question in the cumulative review, run the ask_question_and_validate function and track the correct answers
-    for i, question_data in enumerate(questions): # Iterate over the questions
-        print(f"\nQuestion {i + 1}/{len(questions)}:") # Print the question number
-        chapter = question_data.get('chapter', 1) # Get the chapter number
-        lesson = question_data.get('lesson', None) # Get the lesson number
-        if ask_question_and_validate(question_data, progress, chapter, lesson): # Ask the question and validate the answer
-            correct_answers += 1 # Increment the correct answers count
-        else: # Handle incorrect answers
-            chapter = question_data.get('chapter', 1)  # Track which chapter the mistake came from
-            progress.add_review_mistake(chapter) # Track the review mistakes
+#     # For each question in the cumulative review, run the ask_question_and_validate function and track the correct answers
+#     for i, question_data in enumerate(questions): # Iterate over the questions
+#         print(f"\nQuestion {i + 1}/{len(questions)}:") # Print the question number
+#         chapter = question_data.get('chapter', 1) # Get the chapter number
+#         lesson = question_data.get('lesson', None) # Get the lesson number
+#         if ask_question_and_validate(question_data, progress, chapter, lesson): # Ask the question and validate the answer
+#             correct_answers += 1 # Increment the correct answers count
+#         else: # Handle incorrect answers
+#             chapter = question_data.get('chapter', 1)  # Track which chapter the mistake came from
+#             progress.add_review_mistake(chapter) # Track the review mistakes
 
-    # Check if the user passed the cumulative review
-    if correct_answers >= int(len(questions) * 0.7): # Check if the user passed the cumulative review
-        print(Fore.GREEN + "Congratulations! You passed the cumulative review!\n") # Print a success message
-        return True # Return True for passing the cumulative review
-    else: # Handle failing the cumulative review
-        print(Fore.RED + "You did not pass the cumulative review. Please try again.\n") # Print an error message
-        return False # Return False for failing the cumulative review
+#     # Check if the user passed the cumulative review
+#     if correct_answers >= int(len(questions) * 0.7): # Check if the user passed the cumulative review
+#         print(Fore.GREEN + "Congratulations! You passed the cumulative review!\n") # Print a success message
+#         return True # Return True for passing the cumulative review
+#     else: # Handle failing the cumulative review
+#         print(Fore.RED + "You did not pass the cumulative review. Please try again.\n") # Print an error message
+#         return False # Return False for failing the cumulative review
 
-# Main game loop    
-def play_game(progress): # Define the play_game function
-    # while loop to allow the user to select a chapter
-    while True: # Loop to select a chapter
-        print("\nSelect a Chapter:") # Print the chapter selection prompt
-        unlocked_chapters = range(1, progress.chapter + 1) # Limit to unlocked chapters
-
-        #for each chapter in the unlocked chapters print the chapter number and title
-        for chapter in unlocked_chapters:  # Iterate over the unlocked chapters
-            print(f"{chapter}) {chapters[chapter]['title']}") # Print the chapter number and title
-
-        chapter_choice = input("Enter the chapter number (or 'B' to go back): ").strip() # Get the user's chapter choice
-
-        #if the user selects 'B' go back to the main menu
-        if chapter_choice.lower() == 'b': # Check if the user selected to go back
-            return  # Go back to main menu
-
-        #if the user's chapter choice is invalid print an error message
-        if not chapter_choice.isdigit() or int(chapter_choice) not in unlocked_chapters: # Check if the user's chapter choice is invalid
-            print(Fore.RED + "Invalid chapter number.") # Print an error message
-            continue # Continue to the next iteration
-
-        #if the user's chapter choice is valid select the lesson
-        chapter = int(chapter_choice) # Convert the chapter choice to an integer
-
+#This starts the new code that converst my previous terminal based code to a Kivy app
+#class to handle the login screen
 class LoginScreen(Screen):
     def authenticate_or_register(self, name=None, email=None, password=None):
         if self.ids.main_button.text == "Login":
@@ -469,60 +295,60 @@ class LoginScreen(Screen):
                 self.ids.message_label.text = "Registration successful! Please login."
         except sqlite3.IntegrityError:
             self.ids.message_label.text = "Error: A user with that email already exists."
-
-class MainScreen(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+# class to handle the main screen
+class MainScreen(Screen): # Define the MainScreen class
+    # Initialize the MainScreen class
+    def __init__(self, **kwargs): # Define the constructor
+        super().__init__(**kwargs) # Call the superclass constructor
         self.user_id = None  # Initialize user_id
-
-    def on_enter(self):
+    # Function that runs when the screen is entered
+    def on_enter(self): # Define the on_enter function
         # Load user progress
-        if self.user_id is not None:
-            user_progress = UserProgress(user_id=self.user_id)
-            self.populate_roadmap(user_progress)
-
-    def populate_roadmap(self, user_progress=None):
-        if not self.user_id:
+        if self.user_id is not None: # Check if user_id is set
+            user_progress = UserProgress(user_id=self.user_id) # Initialize UserProgress
+            self.populate_roadmap(user_progress) # Populate the roadmap
+    # Function to populate the roadmap
+    def populate_roadmap(self, user_progress=None): # Define the populate_roadmap function
+        if not self.user_id: # Check if user_id is set
             print("Error: user_id is not set.")
-            return
+            return # Exit the function if user_id is not set
 
-        roadmap_layout = self.ids.roadmap_layout
+        roadmap_layout = self.ids.roadmap_layout # Get the roadmap layout
         roadmap_layout.clear_widgets()  # Clear any existing widgets
 
-        if user_progress is None:
-            user_progress = UserProgress(user_id=self.user_id)
-        unlocked_chapters = user_progress.chapter
-        unlocked_lessons = user_progress.lesson
+        if user_progress is None: # Initialize UserProgress if not provided
+            user_progress = UserProgress(user_id=self.user_id) # Initialize UserProgress
+        unlocked_chapters = user_progress.chapter # Include all unlocked chapters
+        unlocked_lessons = user_progress.lesson # Include all unlocked lessons
 
         total_height = 0  # Track the total height of the content for ScrollView
 
         # Loop through chapters defined in config.py
-        for chapter_num, chapter_data in chapters.items():
-            if chapter_num > unlocked_chapters:
+        for chapter_num, chapter_data in chapters.items(): # Iterate over chapters 
+            if chapter_num > unlocked_chapters: # Skip locked chapters
                 continue  # Skip locked chapters
 
             # Parent container for each chapter (GridLayout for consistent sizing)
-            chapter_container = GridLayout(
-                cols=1,
-                size_hint_y=None,
-                spacing=10,
-                padding=[10, 10],
-            )
+            chapter_container = GridLayout( # GridLayout for consistent sizing
+                cols=1, # Single column
+                size_hint_y=None, # Required for height to take effect
+                spacing=10, # Spacing between elements
+                padding=[10, 10], # Padding for each chapter
+            ) 
 
             # Chapter indicator (Label)
-            chapter_label = Label(
-                text=f"Chapter {chapter_num}: {chapter_data.get('title', 'Unknown')}",
-                size_hint_y=None,
-                height=40,
-                color=(1, 1, 1, 1),
-                halign='center',
-                valign='middle',
+            chapter_label = Label( # Label for chapter title
+                text=f"Chapter {chapter_num}: {chapter_data.get('title', 'Unknown')}", # Display chapter title
+                size_hint_y=None, # Required for height to take effect
+                height=40, # Adjust height as needed
+                color=(1, 1, 1, 1), # White text
+                halign='center', # Center the text horizontally
+                valign='middle', # Center the text vertically
                 text_size=(self.width - 40, None),  # Adjust text wrapping width (subtract some padding)
                 size_hint_x=None,  # Required to control text wrapping
                 width=self.width - 40  # Ensure it matches the `text_size` width to wrap properly
             )
-            chapter_container.add_widget(chapter_label)
-
+            chapter_container.add_widget(chapter_label) # Add chapter label to chapter container
             # Container for lessons (GridLayout)
             lesson_box = GridLayout(
                 cols=1,
@@ -530,137 +356,111 @@ class MainScreen(Screen):
                 spacing=10,
                 padding=[20, 10],
             )
-
             # Loop through lessons (ensure all unlocked lessons are shown)
-            for lesson_num in range(1, unlocked_lessons + 1):
-                lesson_data = chapter_data['lessons'].get(lesson_num)
-                if lesson_data:
-                    lesson_button = Button(
-                        text=f"Lesson {lesson_num}",
-                        size_hint_y=None,
-                        height=40,
-                        on_press=lambda btn, ch=chapter_num, ln=lesson_num: self.load_lesson_screen(ch, ln)
-                    )
-                    lesson_box.add_widget(lesson_button)
-
+            for lesson_num in range(1, unlocked_lessons + 1): # Include all unlocked lessons
+                lesson_data = chapter_data['lessons'].get(lesson_num) # Get lesson data
+                if lesson_data: # Check if lesson data is available
+                    lesson_button = Button( # Button for each lesson
+                        text=f"Lesson {lesson_num}", # Display lesson number
+                        size_hint_y=None, # Required for height to take effect
+                        height=40, # Adjust height as needed
+                        on_press=lambda btn, ch=chapter_num, ln=lesson_num: self.load_lesson_screen(ch, ln) # Pass chapter and lesson numbers
+                    ) 
+                    lesson_box.add_widget(lesson_button) # Add lesson button to lesson box
             # Adjust lesson_box height based on its contents
-            lesson_box.height = lesson_box.minimum_height
-            chapter_container.add_widget(lesson_box)
-
+            lesson_box.height = lesson_box.minimum_height # Set the height of the lesson box
+            chapter_container.add_widget(lesson_box) # Add lesson box to chapter container
             # Set container height based on contents
-            chapter_container.height = chapter_label.height + lesson_box.height + 20  # Adding padding
-            roadmap_layout.add_widget(chapter_container)
-
-            # Increment total height for ScrollView content
-            total_height += chapter_container.height
-
-        # Adjust the height of the roadmap_layout based on total content
-        roadmap_layout.height = total_height
-
-    def load_lesson_screen(self, chapter, lesson):
+            chapter_container.height = chapter_label.height + lesson_box.height + 20  # Adding padding between elements
+            roadmap_layout.add_widget(chapter_container) # Add chapter container to the roadmap layout
+            total_height += chapter_container.height # Add the chapter container height to the total height
+        roadmap_layout.height = total_height # Set the height of the roadmap layout
+    # Function to load the lesson screen
+    def load_lesson_screen(self, chapter, lesson): # Define the load_lesson_screen function
         # Navigate to the lesson screen and load the lesson
-        lesson_screen = self.manager.get_screen('lesson')
-        lesson_screen.load_lesson(self.user_id, chapter, lesson)
-        self.manager.current = 'lesson'
-
-class LessonScreen(Screen):
+        lesson_screen = self.manager.get_screen('lesson') # Get the LessonScreen instance
+        lesson_screen.load_lesson(self.user_id, chapter, lesson) # Pass user_id, chapter, and lesson
+        self.manager.current = 'lesson' # Transition to the lesson screen
+# class to handle the lesson screen
+class LessonScreen(Screen): # Define the LessonScreen class
     lesson_parts = []  # Default value for lesson_parts
     current_part = 0   # Default value for current_part
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    # Initialize the LessonScreen class
+    def __init__(self, **kwargs): # Define the constructor
+        super().__init__(**kwargs) # Call the superclass constructor
         self.lesson_parts = []  # Initialize an empty list for lesson parts
         self.current_part = 0  # Initialize current part index
         self.chapter = None  # Initialize chapter attribute
         self.lesson = None  # Initialize lesson attribute
-
-    def load_lesson(self, user_id, chapter, lesson):
-        print(f"Loading lesson for User ID: {user_id}, Chapter: {chapter}, Lesson: {lesson}")
+    # Function to load the lesson content
+    def load_lesson(self, user_id, chapter, lesson): # Define the load_lesson function
+        print(f"Loading lesson for User ID: {user_id}, Chapter: {chapter}, Lesson: {lesson}") # Debugging
         self.chapter = chapter  # Store the chapter value
         self.lesson = lesson  # Store the lesson value
-        # Clear previous mistakes
-        try:
-            with sqlite3.connect('progress.db') as conn:
-                cursor = conn.cursor()
-                cursor.execute(
+        try: # Try to clear the user's previous mistakes
+            with sqlite3.connect('progress.db') as conn: # Connect to the database
+                cursor = conn.cursor() # Create a cursor object
+                cursor.execute( # Execute an SQL query
                     '''
                     DELETE FROM mistakes WHERE user_id = ? AND chapter = ? AND lesson = ?
                     ''',
-                    (user_id, chapter, lesson)
+                    (user_id, chapter, lesson) # Pass the user ID, chapter, and lesson as parameters
                 )
-                conn.commit()
-            print("Cleared previous mistakes for the current lesson.")
-        except sqlite3.Error as e:
-            print(f"Failed to clear previous mistakes: {e}")
+                conn.commit() # Commit the transaction
+            print("Cleared previous mistakes for the current lesson.") # Debugging line
+        except sqlite3.Error as e: # Handle database errors
+            print(f"Failed to clear previous mistakes: {e}") # Debugging line
 
-        # Load user progress
-        progress = UserProgress(user_id=user_id)
+        progress = UserProgress(user_id=user_id) # Initialize UserProgress
+        lesson_content = generate_lesson_content(progress, chapter, lesson) # Generate lesson content
+        print(f"Generated Lesson Content:\n{lesson_content}") # Debugging statement
 
-        # Generate lesson content
-        lesson_content = generate_lesson_content(progress, chapter, lesson)
-        print(f"Generated Lesson Content:\n{lesson_content}")
-
-        # Split and store lesson parts
-        self.lesson_parts = [part.strip() for part in lesson_content.split("\n\n") if part.strip()]
-        self.current_part = 0
+        self.lesson_parts = [part.strip() for part in lesson_content.split("\n\n") if part.strip()] # Split the lesson parts
+        self.current_part = 0   # Reset current part index
         if self.lesson_parts:
-            print(f"Lesson Parts Loaded: {self.lesson_parts}")
-            self.ids.lesson_content.text = self.lesson_parts[self.current_part]
+            self.ids.lesson_content.text = self.lesson_parts[self.current_part] # Display the first part
         else:
-            print("No content available.")
-            self.ids.lesson_content.text = "No content available."
+            self.ids.lesson_content.text = "No content available." # Error Handling/Debugging line
 
         # Generate questions from lesson content
-        question_count = chapters[chapter]['lessons'][lesson].get('question_count')
-        if not question_count:
-            print("Error: No question count specified for this lesson.")
+        question_count = chapters[chapter]['lessons'][lesson].get('question_count') # Get question count
+        if not question_count: # Check if question count is not specified
+            print("Error: No question count specified for this lesson.") # Print an error message
             self.questions = []  # Ensure questions list is initialized even if empty
+        else: # Generate questions
+            self.questions = generate_questions_from_content(chapter, lesson, lesson_content, question_count) # Generate questions
+            print(f"Generated Questions: {self.questions}") # Debugging statement
+    # Function to store questions for transition
+    def store_questions_for_transition(self, questions, chapter, lesson): # define the store_questions_for_transition function
+        question_screen = self.manager.get_screen("questions")  # Get the QuestionScreen instance
+        if question_screen:  # Check if QuestionScreen is found   
+            question_screen.set_questions(questions, chapter, lesson) # Set the questions on the QuestionScreen
+        else: # Handle case where QuestionScreen is not found
+            print("Failed to retrieve QuestionScreen") # Debug message
+    # Function to update the lesson display
+    def update_lesson_display(self): # Define the update_lesson_display function
+        content = self.lesson_parts[self.current_part] # Get the content for the current part
+        self.ids.lesson_content.text = content  # Update the lesson content
+    # Function to navigate to the next lesson part
+    def next_lesson_part(self): # Define the next_lesson_part function
+        if self.current_part < len(self.lesson_parts) - 1: # Check if not at the end
+            self.current_part += 1 # Move to the next part
+            self.update_lesson_display() # Update the lesson display
         else:
-            self.questions = generate_questions_from_content(chapter, lesson, lesson_content, question_count)
-            print(f"Generated Questions: {self.questions}")
-
-    def store_questions_for_transition(self, questions, chapter, lesson):
-        print("Entering store_questions_for_transition")  # Debug confirmation
-        question_screen = self.manager.get_screen("questions")
-        print(f"QuestionScreen reference: {question_screen}")  # Print to confirm retrieval
-        if question_screen:
-            print("Successfully retrieved QuestionScreen")
-            print(f"Calling set_questions with questions: {questions}")
-            question_screen.set_questions(questions, chapter, lesson)
-        else:
-            print("Failed to retrieve QuestionScreen")
-
-
-
-    def update_lesson_display(self):
-        """Update the content display based on the current part index."""
-        content = self.lesson_parts[self.current_part]
-        self.ids.lesson_content.text = content
-    
-    def next_lesson_part(self):
-        if self.current_part < len(self.lesson_parts) - 1:
-            self.current_part += 1
-            print(f"Moving to Next Part: {self.current_part}, Content: {self.lesson_parts[self.current_part]}")
-            self.update_lesson_display()
-        else:
-            print("Reached end of lesson, transitioning to questions.")
             self.store_questions_for_transition(self.questions, self.chapter, self.lesson)  # Add this call here if not present
-            self.manager.current = "questions"
-        self.update_navigation_buttons() 
-
-    def previous_lesson_part(self):
-        if self.current_part > 0:
-            self.current_part -= 1
-            print(f"Returning to Previous Part: {self.current_part}, Content: {self.lesson_parts[self.current_part]}")
-            self.update_lesson_display()
-        self.update_navigation_buttons()
-
-    def update_navigation_buttons(self):
-        """Control the visibility and state of navigation buttons."""
+            self.manager.current = "questions" # Transition to the questions screen
+        self.update_navigation_buttons()  # Update the navigation buttons
+    # Function to navigate to the previous lesson part
+    def previous_lesson_part(self): # Define the previous_lesson_part function
+        if self.current_part > 0: # Check if not at the beginning
+            self.current_part -= 1 # Move to the previous part
+            self.update_lesson_display() # Update the lesson display
+        self.update_navigation_buttons() # Update the navigation buttons
+    # Function to update the visibility and enable state of navigation buttons
+    def update_navigation_buttons(self): # Define the update_navigation_buttons function
         # Control visibility and enable state of back button
-        self.ids.back_button.opacity = 1 if self.current_part > 0 else 0
-        self.ids.back_button.disabled = self.current_part <= 0
-
+        self.ids.back_button.opacity = 1 if self.current_part > 0 else 0 # Hide if at the beginning
+        self.ids.back_button.disabled = self.current_part <= 0 # Disable if at the beginning
 class ProfileScreen(Screen):
     pass
 class MistakesScreen(Screen):
@@ -669,32 +469,36 @@ class ChapterReviewScreen(Screen):
     pass
 class CumulativeReviewScreen(Screen):
     pass
-class QuestionScreen(Screen):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+# class to handle the question screen
+class QuestionScreen(Screen): # Define the QuestionScreen class
+    def __init__(self, **kwargs): # Define the constructor
+        super().__init__(**kwargs) # Call the superclass constructor
         self.questions = []  # To store the questions for the screen
         self.current_question_index = 0  # To track the current question index
         self.chapter = None  # To store the current chapter number
         self.lesson = None  # To store the current lesson number
         self.selected_answer = None  # To track selected answers for multiple choice
-    def set_questions(self, questions, chapter, lesson):
+        self.awaiting_next_submission = False  # To prevent multiple submissions
+        self.feedback_label = None # To store the feedback label
+    def set_questions(self, questions, chapter, lesson): # Define the set_questions function
         print(f"set_questions called with questions: {questions}, Chapter: {chapter}, Lesson: {lesson}")  # Debug statement
-        self.questions = questions
-        self.chapter = chapter
-        self.lesson = lesson
+        self.questions = questions # Store the questions
+        self.chapter = chapter # Store the chapter numbers
+        self.lesson = lesson  # Store the lesson numbers
+        self.current_question_index = 0  # Reset the current question index
         self.display_next_question()  # Ensure this call is here
-
-    def display_next_question(self):
+    # Function to display the next question
+    def display_next_question(self): # Define the display_next_question function
         print("display_next_question called")  # Debug statement
-        if not self.questions or self.current_question_index >= len(self.questions):
-            print("No questions available or end of questions reached.")
-            self.ids.question_content.text = "No questions available."
+        if not self.questions or self.current_question_index >= len(self.questions): # Check if there are no questions or end of questions reached
+            print("No questions available or end of questions reached.") # Debug statement
+            self.ids.question_content.text = "No questions available." # Update the question content
 
             # Unlock the next lesson and save progress
-            user_progress = UserProgress(self.manager.get_screen('main').user_id)
-            if self.lesson is not None and self.chapter is not None:
-                total_lessons_in_chapter = len(chapters[self.chapter]['lessons']) - 1
-                if self.lesson < total_lessons_in_chapter:
+            user_progress = UserProgress(self.manager.get_screen('main').user_id) # Retrieve user progress
+            if self.lesson is not None and self.chapter is not None: # Ensure lesson and chapter are set
+                total_lessons_in_chapter = len(chapters[self.chapter]['lessons']) - 1 # Subtract 1 for review lesson 
+                if self.lesson < total_lessons_in_chapter: # Check if there are more lessons in the chapter
                     user_progress.lesson += 1  # Unlock the next lesson
                 else:
                     user_progress.chapter += 1  # Unlock the next chapter if all lessons are complete
@@ -702,86 +506,204 @@ class QuestionScreen(Screen):
                 user_progress.save_progress()  # Ensure this line is called
 
             # Transition back to the main screen
-            self.manager.current = 'main'
+            self.manager.current = 'main' # Transition back to the main screen
             self.manager.get_screen('main').on_enter()  # Refresh the main screen if necessary
-            return
+            return # Exit the function
 
-        question = self.questions[self.current_question_index]
+        self.awaiting_next_submission = False # Reset the flag
+        question = self.questions[self.current_question_index] # Get the current question
         print(f"Displaying question: {question}")  # Debugging statement
 
+        self.ids.feedback_label.text = ""  # Clear the feedback label
+
         # Display the question text
-        question_text = question.get('question', 'No question text available')
-        lines = question_text.split('\n')
-        filtered_lines = [line for line in lines if not line.startswith(('MULTIPLE CHOICE QUESTION', 'Chapter:', 'Lesson:', 'Options:', 'Question:'))]
-        cleaned_question_text = "\n".join(filtered_lines).strip()
+        question_text = question.get('question', 'No question text available') # Get the question text
+        lines = question_text.split('\n') # Split the question text into lines
+        filtered_lines = [line for line in lines if not line.startswith(('MULTIPLE CHOICE QUESTION', 'Chapter:', 'Lesson:', 'Options:', 'Question:'))] # Filter out metadata
+        cleaned_question_text = "\n".join(filtered_lines).strip() # Clean up the question text
 
         # If multiple-choice, add options to the question text
-        if question.get('type') == 'multiple_choice':
-            options = question.get('options', {})
-            formatted_options = "\n".join([f"{key}) {value}" for key, value in options.items()])
-            cleaned_question_text = f"{cleaned_question_text}\n\n{formatted_options}"
+        if question.get('type') == 'multiple_choice': # For multiple choice questions
+            options = question.get('options', {}) # Get the options
+            formatted_options = "\n".join([f"{key}) {value}" for key, value in options.items()]) # Format options
+            cleaned_question_text = f"{cleaned_question_text}\n\n{formatted_options}" # Append options to the question text
 
-        self.ids.question_content.text = cleaned_question_text
+        self.ids.question_content.text = cleaned_question_text # Display the question text
 
-        # Clear existing input widgets
-        self.ids.answer_area.clear_widgets()
+        self.ids.answer_area.clear_widgets() # Clear existing answer area widgets
 
         # Handle different question types
-        if question.get('type') == 'multiple_choice':
-            # Create buttons labeled "A", "B", "C", "D"
-            for key in ["A", "B", "C", "D"]:
-                btn = Button(text=key, size_hint=(None, None), height=40, width=40)  # Small buttons
-                btn.bind(on_press=self.on_option_selected)
-                self.ids.answer_area.add_widget(btn)
-        elif question.get('type') == 'true_false':
-            for option in ["True", "False"]:
-                btn = Button(text=option, size_hint=(None, None), height=40, width=100)
-                btn.bind(on_press=self.on_option_selected)
-                self.ids.answer_area.add_widget(btn)
+        if question.get('type') == 'multiple_choice':  # For multiple choice questions
+            for key in ["A", "B", "C", "D"]: # Add A, B, C, D buttons
+                btn = Button(text=key, size_hint=(None, None), height=40, width=40) # Adjust width as needed
+                btn.bind(on_press=self.on_option_selected) # Bind the button press event
+                self.ids.answer_area.add_widget(btn) # Add the button to the answer area
+        elif question.get('type') == 'true_false': # For true/false questions
+            for option in ["True", "False"]: # Add True and False buttons
+                btn = Button(text=option, size_hint=(None, None), height=40, width=100) # Adjust width as needed
+                btn.bind(on_press=self.on_option_selected) # Bind the button press event
+                self.ids.answer_area.add_widget(btn) # Add the button to the answer area
         else:  # For fill in the blank, write code, and scenarios
-            text_input = TextInput(hint_text="Enter your answer", multiline=False, size_hint=(0.8, None), height=40)
-            self.ids.answer_area.add_widget(text_input)
-            self.ids.user_input = text_input  # Reference for later use
-
-
-    def on_option_selected(self, instance):
+            text_input = TextInput(hint_text="Enter your answer", multiline=False, size_hint=(0.8, None), height=40) # Adjust size_hint as needed
+            self.ids.answer_area.add_widget(text_input) # Add the text input widget
+            self.ids.user_input = text_input # Store the text input reference
+    # Function to handle the selection of an option
+    def on_option_selected(self, instance): # Define the on_option_selected function
         # Change color to indicate selection and store the selected answer
-        for child in self.ids.answer_area.children:
-            if isinstance(child, Button):
+        for child in self.ids.answer_area.children: # Iterate over the answer area children
+            if isinstance(child, Button): # Check if the child is a Button
                 child.background_color = [1, 1, 1, 1]  # Reset color
         instance.background_color = [0, 1, 0, 1]  # Highlight selected button
-        self.selected_answer = instance.text
+        self.selected_answer = instance.text # Store the selected answer
+    # Function to handle the submission of an answer
+    def submit_answer(self): # Define the submit_answer function
+        if self.awaiting_next_submission: # Prevent multiple submissions
+            # Move to the next question after showing feedback
+            self.current_question_index += 1 # Move to the next question
+            self.display_next_question() # Ensure this call is here
+            return # Exit the function
 
-    def submit_answer(self):
-        if self.questions:
-            question = self.questions[self.current_question_index]
-            if question.get('type') in ['multiple_choice', 'true_false']:
-                print(f"Submitted Answer: {self.selected_answer}")
-            else:  # For text input-based questions
-                user_answer = self.ids.user_input.text if hasattr(self.ids, 'user_input') else ""
-                print(f"Submitted Answer: {user_answer}")
+        if self.questions: # Ensure questions are available
+            question = self.questions[self.current_question_index] # Get the current question
+            correct = False  # Track whether the answer was correct
+            user_answer = ""    # Initialize user answer
 
-            # Move to the next question
-            self.current_question_index += 1
-            self.display_next_question()
+            if question.get('type') in ['multiple_choice', 'true_false']: # Handle multiple choice and true/false questions
+                user_answer = self.selected_answer   # Get the selected answer
+                if user_answer: # Validate the answer 
+                    correct = self.validate_answer(question, user_answer) # Validate the answer
+            elif question.get('type') == 'fill_in_the_blank': # Handle fill in the blank questions
+                user_answer = self.ids.user_input.text if hasattr(self.ids, 'user_input') else "" # Get user input
+                correct = self.validate_answer(question, user_answer)
+            elif question.get('type') == 'write_code': # Handle code questions
+                user_code = self.collect_code_input() # Collect the user's code input
+                correct, feedback = self.validate_code_answer(question, user_code) # Validate the code answer
+                db_feedback = self.get_feedback_from_mistakes(self.manager.get_screen('main').user_id, self.chapter, self.lesson, question.get('question', '')) # Retrieve feedback from mistakes
+                feedback += f"\n{db_feedback}"  # Append feedback from mistakes
+                self.display_feedback(correct, feedback, question.get('correct_answer')) # Display feedback
+            elif question.get('type') == 'scenario': # Handle scenario questions
+                user_response = self.collect_scenario_response() # Collect the user's response
+                correct, feedback = self.validate_scenario_answer(question, user_response) # Validate the scenario response
+                db_feedback = self.get_feedback_from_mistakes(self.manager.get_screen('main').user_id, self.chapter, self.lesson, question.get('question', '')) # Retrieve feedback from mistakes
+                feedback += f"\n{db_feedback}" # Append feedback from mistakes
+                self.display_feedback(correct, feedback, question.get('correct_answer')) # Display feedback
 
+            # Display feedback for all other types 
+            if question.get('type') not in ['write_code', 'scenario']:  # Handled separately
+                self.display_feedback(correct, "", question.get('correct_answer')) # Display feedback
 
+            self.awaiting_next_submission = True # Set flag to wait for next submission
+    # Function to validate answers for multiple choice, true/false, and fill in the blank questions
+    def validate_answer(self, question_data, user_answer): # Define the validate_answer function
+        correct = False # Track whether the answer was correct
+        if question_data['type'] == 'multiple_choice': # Case-sensitive comparison
+            correct = user_answer == question_data.get('correct_answer') # Case-sensitive comparison
+        elif question_data['type'] == 'true_false': # Case-insensitive comparison
+            correct = user_answer.lower() == question_data.get('correct_answer', '').lower() # Case-insensitive comparison
+        elif question_data['type'] == 'fill_in_the_blank': # Case-insensitive comparison
+            correct = user_answer.lower() == question_data.get('correct_answer', '').lower() #Case-insensitive comparison
 
+        if not correct: # Save the mistake if incorrect
+            self.save_mistake(question_data, user_answer) # Save the mistake
+        return correct # Return the validation result
+    # Function to validate code answers
+    def validate_code_answer(self, question_data, user_code): # Define the validate_code_answer function
+        user_output, user_errors = run_user_code(user_code) # Run the user code and capture output/errors
+        correct, feedback = validate_answer_with_gpt( # Validate the answer using GPT
+            question_data, user_code=user_code, user_output=user_output # Pass the question data, user code, and user output
+        )
+        feedback_message = feedback  # Initialize feedback message with GPT feedback
 
-Builder.load_file("main.kv")
+        # Save the mistake if incorrect
+        if not correct: # Check if the answer is incorrect
+            feedback_message += f"\n\nYour Output:\n{user_output or 'No output.'}" # Include user output in feedback
+            if user_errors: # Check if there are user errors
+                feedback_message += f"\n\nErrors:\n{user_errors}" # Include user errors in feedback
+            self.save_mistake(question_data, user_code, feedback_message) # Save the mistake
+        
+        return correct, feedback_message # Return the validation result and feedback
+    # Function to validate scenario answers
+    def validate_scenario_answer(self, question_data, user_response): # Define the validate_scenario_answer function
+        print("Scenario Question Validation:")  # Log for scenario validation
+        print(f"Question Data: {question_data}")  # Log the question data
+        print(f"User Response: {user_response}")  # Log the user's response
 
-class MyApp(App):
-    def build(self):
-        sm = ScreenManager()
-        sm.add_widget(LoginScreen(name="login"))
-        sm.add_widget(MainScreen(name="main"))
-        sm.add_widget(LessonScreen(name="lesson"))
-        sm.add_widget(ProfileScreen(name="profile"))
-        sm.add_widget(MistakesScreen(name="mistakes"))
-        sm.add_widget(QuestionScreen(name="questions"))
-        sm.add_widget(ChapterReviewScreen(name="chapter_review"))
-        sm.add_widget(CumulativeReviewScreen(name="cumulative_review"))
+        correct, feedback = validate_answer_with_gpt( # Validate the answer using GPT
+            question_data=question_data, # Pass the question data
+            user_response=user_response # Pass the user response to the validation function
+        )
+
+        print(f"Validation Result: {'Correct' if correct else 'Incorrect'}")  # Log validation result
+        print(f"Feedback: {feedback}")  # Log feedback
+
+        if not correct: # Save the mistake if incorrect
+            self.save_mistake(question_data, user_response, feedback) # Save the mistake
+        return correct, feedback # Return the validation result and feedback
+    # Function to save mistakes
+    def save_mistake(self, question_data, user_answer, feedback=""): # Define the save_mistake function
+        user_progress = UserProgress(self.manager.get_screen('main').user_id) # Initialize UserProgress
+        user_progress.add_mistake( # Add the mistake to the user progress
+            chapter=self.chapter, # Include chapter number
+            lesson=self.lesson, # Include lesson number
+            question=question_data.get('question', ''),  # Include question text
+            user_answer=user_answer, # Include user's answer
+            correct_answer=question_data.get('correct_answer', ''), # Include correct answer
+            feedback=feedback   # Include GPT feedback
+        ) 
+    # Function to get feedback from mistakes
+    def get_feedback_from_mistakes(self, user_id, chapter, lesson, question): # Define the get_feedback_from_mistakes function
+        try: # Try to retrieve feedback from the database
+            with sqlite3.connect('progress.db') as conn: # Connect to the database
+                cursor = conn.cursor() # Create a cursor object
+                cursor.execute( # Execute an SQL query
+                    '''
+                    SELECT feedback FROM mistakes 
+                    WHERE user_id = ? AND chapter = ? AND lesson = ? AND question = ?
+                    ''', (user_id, chapter, lesson, question) # Pass the parameters
+                )
+                result = cursor.fetchone() # Fetch the first row from the result set
+                return result[0] if result else "No additional feedback available." # Return the feedback if available
+        except sqlite3.Error as e: # Handle database errors
+            return f"Database error: {e}" # Return an error message if there is an error
+    # Function to display feedback
+    def display_feedback(self, correct, feedback, correct_answer): # Define the display_feedback function
+        feedback_label = self.ids.feedback_label  # Access the feedback label using ids
+
+        if correct: # Correct answer
+            feedback_label.text = "Correct!" # Set the feedback label text
+            feedback_label.color = (0, 1, 0, 1)  # Green color for correct feedback
+        else: # Incorrect answer
+            # Include correct answer, feedback from GPT, and any additional feedback if applicable
+            feedback_label.text = ( # Set the feedback label text
+                f"Correct Answer: {correct_answer}\n{feedback}" # Include correct answer and feedback
+            )
+            feedback_label.color = (1, 0, 0, 1)  # Red color for incorrect feedback
+    # Function to collect scenario response
+    def collect_scenario_response(self): # Define the collect_scenario_response function
+        if hasattr(self.ids, 'user_input'): # Check if the user input field exists
+            return self.ids.user_input.text # Return the user input
+        return "" # Return empty string if `user_input` is not found
+    # Function to collect code input
+    def collect_code_input(self): # Define the collect_code_input function
+        if hasattr(self.ids, 'user_input'): # Check if the user input field exists
+            return self.ids.user_input.text  # Return the user input
+        return "" # Return empty string if `user_input` is not found
+
+Builder.load_file("main.kv") # Load the Kivy file
+
+#Function to start the app
+class MyApp(App): # Define the MyApp class
+    def build(self): # Define the build method
+        sm = ScreenManager() # Create a ScreenManager object
+        sm.add_widget(LoginScreen(name="login")) # Add the LoginScreen to the Screen
+        sm.add_widget(MainScreen(name="main")) # Add the MainScreen to the Screen
+        sm.add_widget(LessonScreen(name="lesson")) # Add the LessonScreen to the Screen
+        sm.add_widget(ProfileScreen(name="profile")) # Add the ProfileScreen to the Screen
+        sm.add_widget(MistakesScreen(name="mistakes")) # Add the MistakesScreen to the Screen
+        sm.add_widget(QuestionScreen(name="questions")) # Add the QuestionScreen to the Screen
+        sm.add_widget(ChapterReviewScreen(name="chapter_review")) # Add the ChapterReviewScreen to the Screen
+        sm.add_widget(CumulativeReviewScreen(name="cumulative_review")) # Add the CumulativeReviewScreen to the Screen
         return sm
 # Main entry point
-if __name__ == "__main__":
-    MyApp().run()
+if __name__ == "__main__":  # Check if the script is being run directly
+    MyApp().run() # Run the Kivy application

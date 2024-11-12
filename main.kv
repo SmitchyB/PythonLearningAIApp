@@ -5,6 +5,8 @@ ScreenManager:
     ProfileScreen:
     MistakesScreen:
     QuestionScreen:
+    ChapterReviewScreen:
+    CumulativeReviewScreen:
 
 <LoginScreen>:
     name: "login"
@@ -214,6 +216,7 @@ ScreenManager:
         padding: [10, 10, 10, 10]
         spacing: 10
 
+        # Back Button Area
         BoxLayout:
             size_hint_y: 0.1
             Button:
@@ -223,9 +226,10 @@ ScreenManager:
                 pos_hint: {"left": 1}
                 on_press: root.manager.current = "main"
 
+        # Question Content Area
         BoxLayout:
             orientation: 'vertical'
-            size_hint_y: 0.6  # 60% of the remaining space
+            size_hint_y: 0.4  # Adjust size as needed
             padding: [10, 10, 10, 10]
             Label:
                 id: question_content
@@ -237,13 +241,26 @@ ScreenManager:
                 halign: "left"
                 padding: 10, 10
 
+        # Feedback Label Area (Below Question)
+        Label:
+            id: feedback_label
+            text: ""
+            size_hint_y: None
+            height: self.texture_size[1]
+            color: (1, 0, 0, 1)  # Initial color for incorrect feedback (red)
+            text_size: self.width, None  # Ensures text wraps within the width
+            valign: 'middle'
+            halign: 'left'
+
+        # Answer Area with Options
         BoxLayout:
             id: answer_area
             orientation: 'horizontal'
-            size_hint_y: 0.4  # 40% of the remaining space
-            padding: [10, 0, 10, 0]
+            size_hint_y: 0.3  # Adjust size as needed
             spacing: 10
+            padding: [10, 0, 10, 0]
 
+        # Submit Button Area
         BoxLayout:
             size_hint_y: None
             height: 40
@@ -251,7 +268,9 @@ ScreenManager:
                 text: "Submit"
                 size_hint: (None, None)
                 size: (100, 40)
-                on_press: root.submit_answer()
+                on_press: root.submit_answer() 
 
+<ChapterReviewScreen>
 
+<CumulativeReviewScreen>
 

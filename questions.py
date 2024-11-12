@@ -633,6 +633,9 @@ def validate_answer_with_gpt(question_data, user_response=None, user_code=None, 
             )
         else: # If the question type is unknown
             raise ValueError(f"Unsupported question type: {question_type}") # Raise a ValueError for unsupported question types
+        
+        print("Sending Prompt to GPT:")
+        print(validation_prompt)
 
         # Send the request to GPT
         response = client.chat.completions.create( # Call the OpenAI API to generate the content
@@ -646,6 +649,8 @@ def validate_answer_with_gpt(question_data, user_response=None, user_code=None, 
         )
 
         gpt_response = response.choices[0].message.content.strip() # Extract the content from the API response
+        print("Received Response from GPT:")
+        print(gpt_response)
         # Prioritize "Incorrect" over "Correct" to avoid misinterpretation
         if "incorrect" in gpt_response.lower(): # Check if the response contains 'incorrect'
             return False, gpt_response  # Invalid response
