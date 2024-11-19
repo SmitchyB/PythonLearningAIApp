@@ -265,7 +265,6 @@ chapters = {  # Dictionary of chapters with lessons and questions
         "lessons": {
             1: {
                 "title": "Final Cumulative Review",
-                "question_count": 100
             }
         }
     }

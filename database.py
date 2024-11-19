@@ -60,6 +60,15 @@ def initialize_database(): # Function to initialize the SQLite database
         FOREIGN KEY (user_id) REFERENCES users(id)
     )
     ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS certificates (
+        user_id INTEGER PRIMARY KEY,
+        certificate_path TEXT,
+        date_issued TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    ''')
     conn.commit() # Commit the changes to the database
     conn.close() # Close the connection to the database
 

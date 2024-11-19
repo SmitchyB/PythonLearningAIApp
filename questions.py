@@ -553,57 +553,75 @@ def fill_missing_questions(existing_questions, chapter, total_needed): # Define 
     return existing_questions # Return the existing questions
 
 # Function to generate a cumulative review with 100 questions plus mistakes from chapter reviews
-def generate_cumulative_review(progress): # Define the generate_cumulative_review function with the progress parameter
-    questions = [] # Initialize an empty list to store the questions
+def generate_cumulative_review(progress):
+    questions = []  # Initialize an empty list to store the questions
 
-    # Collect mistakes from chapter reviews (lessons where lesson = 8)
-    try: # Try block to handle exceptions
-        with sqlite3.connect('progress.db') as conn:  # Connect to the database
-            cursor = conn.cursor() # Create a cursor object
-            cursor.execute( # Execute a query to retrieve mistakes from chapter reviews
-                '''
-                SELECT chapter, original_lesson
-                FROM mistakes
-                WHERE user_id = ? AND lesson = 8
-                ''',
-                (progress.user_id,)
-            )
-            mistakes = cursor.fetchall() # Fetch all the mistakes
-    except sqlite3.Error as e: # Catch any exceptions
-        mistakes = [] # Set mistakes to an empty list
- 
-    # For each mistake, generate a question based on the chapter and original lesson
-    for mistake in mistakes: # Iterate over the mistakes
-        chapter, original_lesson = mistake # Unpack the mistake
-        lesson_content = generate_lesson_content(progress, chapter, original_lesson) # Retrieve the lesson content from the database or generate it if not available
-        generated_questions = generate_questions_from_content( # Generate questions based on the lesson content
-            chapter, original_lesson, lesson_content, question_count=1 # Provide the chapter, original lesson, lesson content, and question count as parameters
-        )
-        # Add the question to the list
-        for question in generated_questions: # Iterate over the generated questions
-            question['chapter'] = chapter # Add the chapter to the question data
-            question['lesson'] = original_lesson # Add the original lesson to the question data
-            question['original_lesson'] = original_lesson # Add the original lesson to the question data
-        questions.extend(generated_questions) # Extend the questions list with the generated questions
+    # Loop over all chapters
+    for chapter_num, chapter_data in chapters.items():
+        # Loop over all lessons in the chapter (excluding the chapter review lesson)
+        for lesson_num, lesson_data in chapter_data['lessons'].items():
+            # Exclude the chapter review lesson (assuming it's lesson number 8)
+            if lesson_num == 8:
+                continue  # Skip the chapter review lesson
 
-    # Now, generate random questions from all chapters until we reach 100 + number of mistakes
-    total_needed = 100 + len(mistakes) # Calculate the total number of questions needed
-    while len(questions) < total_needed: # Loop until we have enough questions
-        chapter = random.randint(1, 20) # Randomly select a chapter
-        lesson = random.randint(1, 7) # Randomly select a lesson
-        # Retrieve the lesson content
-        lesson_content = generate_lesson_content(progress, chapter, lesson) # Generate the lesson content
-        generated_questions = generate_questions_from_content( # Generate questions based on the lesson content
-            chapter, lesson, lesson_content, question_count=1 # Provide the chapter, lesson, lesson content, and question count as parameters
-        )
-        for question in generated_questions: # Iterate over the generated questions
-            question['chapter'] = chapter # Add the chapter to the question data
-            question['lesson'] = lesson # Add the lesson to the question data
-        questions.extend(generated_questions) # Extend the questions list with the generated questions
+            content = None  # Initialize content variable
 
-    random.shuffle(questions) # Shuffle the questions
-    return questions[:total_needed] # Return the first 100 + number of mistakes questions
+            # Attempt to fetch lesson content from the database
+            try:
+                with sqlite3.connect('progress.db') as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        '''
+                        SELECT content FROM lesson_content
+                        WHERE user_id = ? AND chapter = ? AND lesson = ?
+                        ''',
+                        (progress.user_id, chapter_num, lesson_num)
+                    )
+                    result = cursor.fetchone()
+                    if result:
+                        content = result[0]
+                    else:
+                        # If content is not in the database, generate it using your existing function
+                        content = generate_lesson_content(progress, chapter_num, lesson_num)
 
+                        # Store the generated content in the database
+                        try:
+                            cursor.execute(
+                                '''
+                                INSERT INTO lesson_content (user_id, chapter, lesson, content)
+                                VALUES (?, ?, ?, ?)
+                                ''',
+                                (progress.user_id, chapter_num, lesson_num, content)
+                            )
+                            conn.commit()
+                        except sqlite3.Error as e:
+                            print(f"Failed to store lesson content for Chapter {chapter_num}, Lesson {lesson_num}: {e}")
+            except sqlite3.Error as e:
+                print(f"Database error when fetching content for Chapter {chapter_num}, Lesson {lesson_num}: {e}")
+                content = None
+
+            # Now, proceed to generate questions if content is available
+            if content:
+                # Generate one question for this lesson
+                generated_questions = generate_questions_from_content(
+                    chapter=chapter_num,
+                    lesson=lesson_num,
+                    content=content,
+                    question_count=1
+                )
+                for question in generated_questions:
+                    question['chapter'] = chapter_num
+                    question['lesson'] = lesson_num
+                questions.extend(generated_questions)
+            else:
+                # Log or print a message if content is missing
+                print(f"Skipping Chapter {chapter_num}, Lesson {lesson_num}: Missing content.")
+
+    # Shuffle the questions to randomize their order
+    random.shuffle(questions)
+
+    # Return the list of questions
+    return questions
 # Function to validate answers using GPT-3 for coding challenges and scenario-based questions
 def validate_answer_with_gpt(question_data, user_response=None, user_code=None, user_output=None): # Define the validate_answer_with_gpt function with the question_data, user_response, user_code, and user_output parameters
     try: # Try block to handle exceptions 
@@ -621,7 +639,7 @@ def validate_answer_with_gpt(question_data, user_response=None, user_code=None, 
                 f"Sample Solution:\n{question_data.get('solution', 'No solution provided.')}\n\n" # Include the sample solution
                 f"Student's Code:\n{user_code or 'No code provided.'}\n\n" # Include the student's code
                 f"Student's Code Output:\n{user_output or 'No output provided.'}\n" # Include the student's code output
-                f"Is the student's solution correct? Start your response with 'Correct' or 'Incorrect'." # Include the validation instructions
+                f"Is the student's solution correct? Start your response with 'Correct' or 'Incorrect'. Then give feedback on how the user can fix their function to work" # Include the validation instructions
             ) 
         elif question_type == "scenario": # Check if the question type is 'scenario'
             validation_prompt = ( # Define the validation prompt
@@ -629,13 +647,10 @@ def validate_answer_with_gpt(question_data, user_response=None, user_code=None, 
                 f"### Scenario Question\n{question_data.get('question', 'No question provided.')}\n\n" # Include the question text
                 f"Expected Answer:\n{question_data.get('answer', 'No answer provided.')}\n\n" # Include the expected answer
                 f"Student's Response:\n{user_response or 'No response provided.'}\n" # Include the student's response
-                f"Is the student's response correct? Start your response with 'Correct' or 'Incorrect'." # Include the validation instructions
+                f"Is the student's response correct? Start your response with 'Correct' or 'Incorrect'. Then give feedback on what the user got wrong and why" # Include the validation instructions
             )
         else: # If the question type is unknown
             raise ValueError(f"Unsupported question type: {question_type}") # Raise a ValueError for unsupported question types
-        
-        print("Sending Prompt to GPT:")
-        print(validation_prompt)
 
         # Send the request to GPT
         response = client.chat.completions.create( # Call the OpenAI API to generate the content
@@ -649,8 +664,6 @@ def validate_answer_with_gpt(question_data, user_response=None, user_code=None, 
         )
 
         gpt_response = response.choices[0].message.content.strip() # Extract the content from the API response
-        print("Received Response from GPT:")
-        print(gpt_response)
         # Prioritize "Incorrect" over "Correct" to avoid misinterpretation
         if "incorrect" in gpt_response.lower(): # Check if the response contains 'incorrect'
             return False, gpt_response  # Invalid response

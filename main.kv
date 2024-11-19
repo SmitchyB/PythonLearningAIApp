@@ -1,3 +1,4 @@
+#:import dp kivy.metrics.dp
 ScreenManager:
     LoginScreen:
     MainScreen:
@@ -7,7 +8,8 @@ ScreenManager:
     QuestionScreen:
     ChapterReviewScreen:
     CumulativeReviewScreen:
-
+    ChapterReviewResultScreen:
+    CumulativeReviewResultScreen:
 <LoginScreen>:
     name: "login"
     AnchorLayout:  # Wrap everything in an AnchorLayout for centering
@@ -90,7 +92,7 @@ ScreenManager:
     BoxLayout:
         orientation: 'vertical'
 
-        # Header Area (Retained)
+        # Header Area (Updated)
         BoxLayout:
             orientation: 'horizontal'
             size_hint_y: None
@@ -103,17 +105,13 @@ ScreenManager:
                 Rectangle:
                     size: self.size
                     pos: self.pos
-            Button:
+            Image:
+                id: profile_pic
                 size_hint: None, None
-                width: 40
-                height: 40
-                background_normal: ''
-                canvas.before:
-                    Color:
-                        rgba: 0.7, 0.7, 0.7, 1
-                    Ellipse:
-                        size: self.size
-                        pos: self.pos
+                size: 40, 40
+                source: 'default_profile_pic.webp'  # Default profile picture path
+                allow_stretch: True
+                keep_ratio: False
             Widget:
             Button:
                 text: "Mistakes"
@@ -130,19 +128,18 @@ ScreenManager:
                 size_hint_x: None
                 width: self.texture_size[0] + 20
                 on_press: root.manager.current = "login"
-
         # Vertical Scrollable Area for Chapters and Lessons
         ScrollView:
             do_scroll_x: False
             do_scroll_y: True
-            bar_width: 10  # Optional: set scrollbar width for visibility
+            bar_width: 10
             BoxLayout:
                 id: roadmap_layout
                 orientation: 'vertical'
                 size_hint_y: None
-                height: self.minimum_height  # Dynamically adjust height
-                spacing: 10  # Adjust spacing if necessary
-                padding: [10, 10, 10, 20]  # Padding (left, top, right, bottom)
+                height: self.minimum_height
+                spacing: 10
+                padding: [10, 10, 10, 20]
 
 <LessonScreen>:
     name: "lesson"
@@ -193,21 +190,189 @@ ScreenManager:
                 size: (100, 40)
                 on_press: root.next_lesson_part()
 
-<ProfileScreen>
+<ProfileScreen>:
     name: "profile"
     BoxLayout:
         orientation: 'vertical'
-        Label:
-            id: username
-            text: "Username:"
+        spacing: dp(10)
+        padding: dp(20)
+        
+        # Header with Save button
+        BoxLayout:
+            size_hint_y: None
+            height: dp(50)
+            Label:
+                text: "Profile"
+                font_size: sp(24)
+                halign: 'left'
+                valign: 'middle'
+                size_hint_x: 0.8
+            Button:
+                text: "Save"
+                size_hint_x: 0.2
+                opacity: 1 if root.is_editing_username or root.is_editing_email else 0
+                disabled: not (root.is_editing_username or root.is_editing_email)
+                on_release:
+                    if root.is_editing_username: root.save_username()
+                    if root.is_editing_email: root.save_email(password_input.text)
+                    password_input.text = ''
+        
+        # Scrollable area with vertical scrolling
+        ScrollView:
+            do_scroll_y: True
+            do_scroll_x: False
+            GridLayout:
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: dp(20)
+                
+                # Profile Picture Section
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: dp(250)
+                    spacing: dp(10)
+                    Image:
+                        source: root.profile_pic_path
+                        size_hint: None, None
+                        size: dp(200), dp(200)
+                        pos_hint: {'center_x': 0.5}
+                    Button:
+                        text: 'Edit Profile Picture'
+                        size_hint_y: None
+                        height: dp(40)
+                        on_release: root.open_profile_pic_popup()
+                
+                # Username Section
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: None
+                    height: dp(50)
+                    spacing: dp(10)
+                    Label:
+                        text: "Username:"
+                        size_hint_x: 0.3
+                    TextInput:
+                        id: username_input  # Add this line to set the ID
+                        text: root.username
+                        multiline: False
+                        readonly: not root.is_editing_username
+                    Button:
+                        text: "Edit" if not root.is_editing_username else "Cancel"
+                        size_hint_x: 0.2
+                        on_release: root.toggle_username_edit()
+                
+                # Email Section
+                BoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: None
+                    height: dp(50)
+                    spacing: dp(10)
+                    Label:
+                        text: "Email:"
+                        size_hint_x: 0.3
+                    TextInput:
+                        id: email_input  # Add this line to set the ID
+                        text: root.email
+                        multiline: False
+                        readonly: not root.is_editing_email
+                    Button:
+                        text: "Edit" if not root.is_editing_email else "Cancel"
+                        size_hint_x: 0.2
+                        on_release: root.toggle_email_edit()
+                # Password Input for Email Change
+                TextInput:
+                    id: password_input
+                    hint_text: "Enter password to change email"
+                    password: True
+                    multiline: False
+                    opacity: 1 if root.is_editing_email else 0
+                    size_hint_y: None
+                    height: dp(40)
+                
+                # Change Password Section
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    height: dp(200)
+                    spacing: dp(10)
+                    Label:
+                        text: "Change Password"
+                        font_size: sp(18)
+                        size_hint_y: None
+                        height: dp(30)
+                    GridLayout:
+                        cols: 2
+                        spacing: dp(10)
+                        size_hint_y: None
+                        height: dp(100)
+                        Label:
+                            text: "Old Password:"
+                        TextInput:
+                            id: old_password_input
+                            password: True
+                            multiline: False
+                        Label:
+                            text: "New Password:"
+                        TextInput:
+                            id: new_password_input
+                            password: True
+                            multiline: False
+                    Button:
+                        text: "Update Password"
+                        size_hint_y: None
+                        height: dp(40)
+                        on_release:
+                            root.change_password(old_password_input.text, new_password_input.text)
+                            old_password_input.text = ''
+                            new_password_input.text = ''
+        
+        # Footer with Back Button
+        Button:
+            text: "Back"
+            size_hint_y: None
+            height: dp(50)
+            on_release:
+                root.on_leave()  # Call the cleanup function
+                app.root.current = 'main'
 
 <MistakesScreen>:
     name: "mistakes"
+
     BoxLayout:
         orientation: 'vertical'
-        Label:
-            id: mistakes
-            text: "Mistakes:"
+
+        # Header with Back and Home buttons
+        BoxLayout:
+            orientation: 'horizontal'
+            size_hint_y: None
+            height: 50
+            padding: [10, 5]
+            spacing: 10
+
+            Button:
+                text: "Back"
+                size_hint: (None, None)
+                size: (100, 40)
+                on_release: root.on_back_pressed()
+
+            Button:
+                text: "Home"
+                size_hint_x: None
+                width: 100
+                on_release: root.navigate_home()
+
+        ScrollView:
+            id: scroll_view
+            do_scroll_x: False
+            do_scroll_y: True
+
+            BoxLayout:
+                id: mistakes_container
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
 
 <QuestionScreen>:
     name: "questions"
@@ -226,40 +391,67 @@ ScreenManager:
                 pos_hint: {"left": 1}
                 on_press: root.manager.current = "main"
 
-        # Question Content Area
-        BoxLayout:
-            orientation: 'vertical'
-            size_hint_y: 0.4  # Adjust size as needed
-            padding: [10, 10, 10, 10]
-            Label:
-                id: question_content
-                text: "Your question text here"
-                text_size: self.width, None
+        # ScrollView for Question Content and Feedback
+        ScrollView:
+            size_hint_y: 0.7  # Adjust size as needed
+            do_scroll_x: False
+            do_scroll_y: True
+            BoxLayout:
+                orientation: 'vertical'
                 size_hint_y: None
-                height: self.texture_size[1]
-                valign: "top"
-                halign: "left"
-                padding: 10, 10
+                height: self.minimum_height  # Dynamically adjust height
+                width: self.width  # Ensure it adjusts to the width of the parent container
+                padding: [10, 10, 10, 10]
+                spacing: 10
 
-        # Feedback Label Area (Below Question)
-        Label:
-            id: feedback_label
-            text: ""
+                Label:
+                    id: question_content
+                    text: "Your question text here"
+                    text_size: self.width, None
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    valign: "top"
+                    halign: "left"
+                    padding: [10, 10]
+
+                Label:
+                    id: feedback_label
+                    text: ""
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    color: (1, 0, 0, 1)  # Initial color for incorrect feedback (red)
+                    text_size: self.width, None  # Ensures text wraps within the width
+                    valign: 'top'
+                    halign: 'left'
+                    padding: [10, 10]
+
+        # Hyperlink-style Labels for Sample Solution and Code Comparison
+        BoxLayout:
+            orientation: 'horizontal'
             size_hint_y: None
-            height: self.texture_size[1]
-            color: (1, 0, 0, 1)  # Initial color for incorrect feedback (red)
-            text_size: self.width, None  # Ensures text wraps within the width
-            valign: 'middle'
-            halign: 'left'
+            height: 30
+            Label:
+                id: sample_solution_label
+                text: "[ref=sample_solution]Sample Solution[/ref]"
+                markup: True
+                color: (0, 0, 1, 1)  # Blue color for hyperlink-style text
+                on_ref_press: root.show_sample_solution()
+
+            Label:
+                id: code_comparison_label
+                text: "[ref=code_comparison]Code Comparison[/ref]"
+                markup: True
+                color: (0, 0, 1, 1)  # Blue color for hyperlink-style text
+                on_ref_press: root.show_code_comparison()
 
         # Answer Area with Options
         BoxLayout:
             id: answer_area
-            orientation: 'horizontal'
-            size_hint_y: 0.3  # Adjust size as needed
+            orientation: 'vertical'
+            size_hint_y: None
+            height: self.minimum_height
             spacing: 10
             padding: [10, 0, 10, 0]
-
         # Submit Button Area
         BoxLayout:
             size_hint_y: None
@@ -268,9 +460,124 @@ ScreenManager:
                 text: "Submit"
                 size_hint: (None, None)
                 size: (100, 40)
-                on_press: root.submit_answer() 
+                on_press: root.submit_answer()
+            Button:
+                text: 'Bypass'
+                size_hint: (None, None)
+                size: (100, 40)  # Set the same size or make it smaller if preferred
+                on_press: root.bypass_validation()
 
-<ChapterReviewScreen>
+<ChapterReviewScreen>:
+    name: "chapter_review"
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: loading_label
+            text: "Chapter Review Loading..."
+            font_size: 24
+            halign: 'center'
+            valign: 'middle'
+            text_size: self.width, None  # Change this line
+            size_hint_y: None
+            height: self.texture_size[1] + 20  # Adjust height dynamically
 
-<CumulativeReviewScreen>
+<CumulativeReviewScreen>:
+    name: "cumulative_review"
+    BoxLayout:
+        orientation: 'vertical'
+        Label:
+            id: loading_label
+            text: "Cumulative Review Loading..."
+            font_size: 24
+            halign: 'center'
+            valign: 'middle'
+            text_size: self.width, None  # Change this line
+            size_hint_y: None
+            height: self.texture_size[1] + 20  # Adjust height dynamically
+
+<ChapterReviewResultScreen>:
+    name: "chapter_review_result"
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [20, 20, 20, 20]
+        spacing: 20
+
+        Label:
+            id: score_label
+            text: "Score: 0/0 (0%)"
+            font_size: 24
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            halign: 'center'
+            valign: 'middle'
+
+        Label:
+            id: result_label
+            text: ""
+            font_size: 20
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            halign: 'center'
+            valign: 'middle'
+
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            spacing: 20
+
+            Button:
+                text: "Retry Review"
+                on_press: root.retry_review()
+            Button:
+                text: "Continue"
+                on_press: root.continue_to_main()
+
+<CumulativeReviewResultScreen>:
+    name: "cumulative_review_result"
+    BoxLayout:
+        orientation: 'vertical'
+        padding: [20, 20, 20, 20]
+        spacing: 20
+
+        Label:
+            id: score_label
+            text: "Score: 0/0 (0%)"
+            font_size: 24
+            size_hint_y: None
+            height: 50
+            text_size: self.width, None
+            halign: 'center'
+            valign: 'middle'
+
+        Label:
+            id: result_label
+            text: ""
+            font_size: 20
+            size_hint_y: None
+            height: 50
+            text_size: self.width, None
+            halign: 'center'
+            valign: 'middle'
+
+        BoxLayout:
+            size_hint_y: None
+            height: 50
+            spacing: 20
+
+            Button:
+                text: "Retry Review"
+                on_press: root.retry_review()
+            Button:
+                text: "Continue"
+                on_press: root.continue_to_main()
+
+        Button:
+            id: certificate_button
+            text: "Download Certificate"
+            size_hint_y: None
+            height: 50
+            disabled: True
+            on_press: root.download_certificate()
 
